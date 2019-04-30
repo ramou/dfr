@@ -444,11 +444,12 @@ void fr(ELEM *source, auto length) {
 
 	std::cout << "We overflowed " << (o-source) << " times." << std::endl;
 	std::cout << "We now known the following are live bits: " << std::endl << std::bitset<sizeof(INT)*3>(livebits) << std::endl;
-	
+
 	//deal overflow into overflow buffer
 
 	//swap source and destination
 
+	currentByte++;
 	//redo estimates
 
 
