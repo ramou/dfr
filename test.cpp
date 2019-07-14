@@ -378,20 +378,29 @@ void fr(ELEM *source, auto length) {
 		d += amount;
 	};
 
+	/*
+		We divide the length roughly (using bitshift) by 256 and
+		allocate the space in destination evenly.
+
+		The extra space after the rough divide is distributed by
+		adding one spot to each of the first few buckets (the
+		remainder) and then just allocating the rougher estimate
+		for the latter buckets, thus the full length is allocated.
+	*/
 	auto estimateUniform = [&buckets] (auto destination, auto length, auto inc) {
 		auto bucketGuess = length>>8;
                 auto remainder = length-(bucketGuess<<8);
 
                 auto d = destination;
                 for(auto i = 0; i < remainder; i++) {
-                        buckets[i << 1]       = d;
-                        inc(d, bucketGuess+1);
-                        buckets[(i << 1) + 1] = d;
+                        buckets[i << 1]       = d; //start
+                        inc(d, bucketGuess+1);     //these buckets are one bigger than the latter buckets
+                        buckets[(i << 1) + 1] = d; //end, which will be start of next bucket
                 }
                 for(auto i = remainder; i < 256; i++) {
-                        buckets[i << 1]       = d;
+                        buckets[i << 1]       = d; //start
 			inc(d, bucketGuess);
-                        buckets[(i << 1) + 1] = d;
+                        buckets[(i << 1) + 1] = d; //end, which will be start of next bucket
                 }
 	};
 
@@ -431,7 +440,7 @@ void fr(ELEM *source, auto length) {
 		auto d = buckets[t<<1];
 		livebits |= bitmask ^ reinterpret_cast<INT>(e);
 		if(d < buckets[(t<<1)+1]) {
-			std::cout << "Placed value with byte " << t << " in main bucket at " << (int)(d-destination) << std::endl;
+			//std::cout << "Placed value with byte " << t << " in main bucket at " << (int)(d-destination) << std::endl;
 			*d=e;
 			buckets[t<<1]++;
 		} else {
@@ -446,6 +455,41 @@ void fr(ELEM *source, auto length) {
 	std::cout << "We now known the following are live bits: " << std::endl << std::bitset<sizeof(INT)*3>(livebits) << std::endl;
 
 	//deal overflow into overflow buffer
+	overflowMaxSize=(o-source);
+	overflowBuffer=(ELEM*)malloc(2*overflowMaxSize*sizeof(ELEM));
+
+	std::cout << "We made a buffer of length " << (2*overflowMaxSize) <<  std::endl;
+
+		//convert overflow counts into target buckets
+	overflowBuckets[0]=overflowBuffer;
+	auto currentBucket = &overflowBuckets[1];
+	auto previousBucket = &overflowBuckets[0];
+
+	std::for_each(overflowCounts, overflowCounts+256, [&currentBucket, &previousBucket](auto &count) {
+		currentBucket[0]=previousBucket[0]+count;
+		currentBucket++;
+		previousBucket++;
+	});
+
+		//Stuart:: so far this looks right
+
+	std::cout << "We succeeded in building overflow buckets."  << std::endl;
+
+
+		//deal into overflow buffer
+	std::for_each(source, o, [&currentByte, &overflowBuckets](auto &e) {
+		auto t = ((reinterpret_cast<INT>(e))>>currentByte) & 255;
+		auto d = overflowBuckets[t];
+		*d=e;
+		overflowBuckets[t]++;
+	});
+
+	std::cout << "We succeeded in dealing into the overflow buckets."  << std::endl;
+
+	std::for_each(overflowBuffer, overflowBuffer+overflowMaxSize, [&currentByte](auto &e) {
+		auto t = ((reinterpret_cast<INT>(e))>>currentByte) & 255;
+		std::cout << "overflow value: " << t << std::endl;
+	});
 
 	//swap source and destination
 
