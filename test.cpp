@@ -296,8 +296,11 @@ void fr(ELEM *source, auto length) {
 	//data is dealt, this will be a set of start/end points for each bucket
 	//I suggest all start values, then all end values as a cache-efficient format
 	//When estimating uniform buckets, we can use math and the first 256 values
-	//To make this fancier/faster
-	ELEM **buckets = new ELEM*[512];
+	//To make this fancier/faster.
+	//
+	//We need two sets of these, one for each buffer, and we'll swap them
+	ELEM **sourceBuckets = new ELEM*[512];
+	ELEM **destinationBuckets = new ELEM*[512];
 
 	//Initially these will be the starting positions into the overflow buffer
 	//Once dumped into the overflow buffer, they will then be the ending positions
@@ -387,29 +390,33 @@ void fr(ELEM *source, auto length) {
 		remainder) and then just allocating the rougher estimate
 		for the latter buckets, thus the full length is allocated.
 	*/
-	auto estimateUniform = [&buckets] (auto destination, auto length, auto inc) {
+	auto estimateUniform = [&sourceBuckets] (auto destination, auto length, auto inc) {
 		auto bucketGuess = length>>8;
                 auto remainder = length-(bucketGuess<<8);
 
                 auto d = destination;
                 for(auto i = 0; i < remainder; i++) {
-                        buckets[i << 1]       = d; //start
+                        sourceBuckets[i << 1]       = d; //start
                         inc(d, bucketGuess+1);     //these buckets are one bigger than the latter buckets
-                        buckets[(i << 1) + 1] = d; //end, which will be start of next bucket
+                        sourceBuckets[(i << 1) + 1] = d; //end, which will be start of next bucket
                 }
                 for(auto i = remainder; i < 256; i++) {
-                        buckets[i << 1]       = d; //start
+                        sourceBuckets[i << 1]       = d; //start
 			inc(d, bucketGuess);
-                        buckets[(i << 1) + 1] = d; //end, which will be start of next bucket
+                        sourceBuckets[(i << 1) + 1] = d; //end, which will be start of next bucket
                 }
 	};
 
-	if(length < DISTRIBUTION_SENSITIVE_THRESHOLD) {
-		estimateUniform(destination, length, incrementDestination);
-	} else {
+	/*
+		This will eventually need to capture more data
+	*/
+	auto doEstimates = [&estimateUniform, &destination, &length, &incrementDestination]() {
+		if(length < DISTRIBUTION_SENSITIVE_THRESHOLD) {
+			estimateUniform(destination, length, incrementDestination);
+		} else {
 		//THIS IS NOT DONE YET! 4b!
 
-		estimateUniform(destination, length, incrementDestination);
+			estimateUniform(destination, length, incrementDestination);
 
 		/*
                 //checking for SMALL_SAMPLE... this is more efficient than
@@ -427,22 +434,24 @@ void fr(ELEM *source, auto length) {
         	        smallSamples[i]=&source[i*step+dist(gen)];
 	        }
 		*/
-	}
+		}
+	};
 
+	doEstimates();
 
 	/**
 		5) Process first pass of top bytes
 	*/
 	auto o = source;
 	auto currentByte = 8-neededBytes;
-	std::for_each(source, source+length, [&livebits, &bitmask, &currentByte, &buckets, &overflowCounts, &o, &neededBytes, &destination](auto &e){
+	std::for_each(source, source+length, [&livebits, &bitmask, &currentByte, &sourceBuckets, &overflowCounts, &o, &neededBytes, &destination](auto &e){
 		auto t = ((reinterpret_cast<INT>(e))>>currentByte) & 255;
-		auto d = buckets[t<<1];
+		auto d = sourceBuckets[t<<1];
 		livebits |= bitmask ^ reinterpret_cast<INT>(e);
-		if(d < buckets[(t<<1)+1]) {
+		if(d < sourceBuckets[(t<<1)+1]) {
 			//std::cout << "Placed value with byte " << t << " in main bucket at " << (int)(d-destination) << std::endl;
 			*d=e;
-			buckets[t<<1]++;
+			sourceBuckets[t<<1]++;
 		} else {
 			std::cout << "Placed value with byte " << t << " in overflow bucket" << std::endl;
 			overflowCounts[t]++;
@@ -486,22 +495,41 @@ void fr(ELEM *source, auto length) {
 
 	std::cout << "We succeeded in dealing into the overflow buckets."  << std::endl;
 
-	std::for_each(overflowBuffer, overflowBuffer+overflowMaxSize, [&currentByte](auto &e) {
+	std::for_each(overflowBuffer, overflowBuffer+(overflowMaxSize-1), [&currentByte](auto &e) {
 		auto t = ((reinterpret_cast<INT>(e))>>currentByte) & 255;
 		std::cout << "overflow value: " << t << std::endl;
 	});
 
+	std::cout << "Now we swap buffers."  << std::endl;
+
 	//swap source and destination
+	std::swap(source, destination);
+	std::cout << "Now we swap buffer counts."  << std::endl;
+	std::swap(sourceBuckets, destinationBuckets);
 
 	currentByte++;
+
+	//At this point, source has our data in disjoint buckets and destination is ready.
+	//buckets contains the start and end positions of each disjoint bucket in source.
+	//overflowBuffer is the contiguous secondary source, with end buckets defined by 
+	//overflowBuckets, and is twice overflowMaxSize so we can deal into it to before 
+	//we make use of the input as a buffer source to prevent writing over a live bucket.
+
 	//redo estimates
 
+	std::cout << "Now we redo our estimates."  << std::endl;
+
+	doEstimates();
 
 
 	//Between passes, use std::swap as necessarty for source and destination.
 
 	//Now we should define our lambdas.
 
+
+	//ERASE THIS! This just fixes our current state into source since we've 
+	//done an odd number of passes and we're still writing code!!!
+	std::swap(source, destination);
 
 	//We're done! Delete all the stuff we made
 	delete [] destination;
