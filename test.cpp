@@ -147,7 +147,9 @@ void insertionSort(ELEM *source, auto length) {
         }
 }
 
-const int DIVERSION_THRESHOLD = 14;
+//This should be ~14 lowering while I dev
+const int DIVERSION_THRESHOLD = 4;
+
 const int SMALL_SAMPLE = 26;
 const int LARGE_SAMPLE = 1024;	 // 1024 because I like large multiple of 256
 const int DISTRIBUTION_SENSITIVE_THRESHOLD = 4096; 	/* 	If a length of data to be processed is smaller than this and
@@ -355,17 +357,21 @@ void fr(ELEM *source, auto length) {
 	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
 
 
-	auto neededBits = ceil(std::log2(length/DIVERSION_THRESHOLD)); //ceil(log(1792/14)/log(2)),
+	auto neededBits = ceil(std::log2((float)(length)/(float)(DIVERSION_THRESHOLD))); //ceil(log(1792/14)/log(2)),
 
 	//std::cout << "We need " << neededBits << " bits for diverting " << length << " with diversion threshold " << DIVERSION_THRESHOLD << std::endl;
 
 	auto foundLiveBits = 0;
 	auto neededBytes = sizeof(INT);
 
+	std::cout << "When sampling we found the following live bits: " << std::endl << std::bitset<sizeof(INT)*8>(livebits) << std::endl;
+
 	const auto allBits = pow(2, sizeof(INT));
 	for(auto i = 1; i < allBits; i++) {
-		foundLiveBits += ((livebits >> (int)(allBits - i)) & 1);
+		auto val = ((livebits >> (int)(allBits - i)) & 1);
+		foundLiveBits += val;
 		if(foundLiveBits==neededBits) {
+			std::cout << "We processed " << i << " bits before finding enough so our top bytes are " << neededBytes << std::endl;
 			neededBytes = ceil((i+1)/8.0);
 			break;
 		}
@@ -439,30 +445,44 @@ void fr(ELEM *source, auto length) {
 	};
 
 	doEstimates();
-
-	/**
-		5) Process first pass of top bytes
-	*/
-	auto o = source;
 	auto currentByte = 8-neededBytes;
-	std::for_each(source, source+length, [&livebits, &bitmask, &currentByte, &sourceBuckets, &overflowCounts, &o, &neededBytes, &destination](auto &e){
-		auto t = ((reinterpret_cast<INT>(e))>>currentByte) & 255;
-		auto d = sourceBuckets[t<<1];
-		livebits |= bitmask ^ reinterpret_cast<INT>(e);
+	auto o = source;
+
+	std::cout << "We need " << neededBytes << " byte(s)." << std::endl;
+
+	auto passOverInput = [&source, &length, &o, &livebits, &bitmask, &currentByte, &sourceBuckets, &overflowCounts, &destination](auto deal, auto &count) {
+		std::for_each(source, source+length, [&livebits, &bitmask, &currentByte, &sourceBuckets, &overflowCounts, &o, &destination, &deal, &count](auto &e){
+	                auto t = ((reinterpret_cast<INT>(e))>>currentByte) & 255;
+                	auto d = sourceBuckets[t<<1];
+        	        livebits |= bitmask ^ reinterpret_cast<INT>(e);
+			deal(d,t,e,o);
+			count(d,t,e);
+	        });
+	};
+
+	auto dealToOverflow = [&sourceBuckets, &overflowCounts](auto &d, auto &t, auto &e, auto &o) {
 		if(d < sourceBuckets[(t<<1)+1]) {
-			//std::cout << "Placed value with byte " << t << " in main bucket at " << (int)(d-destination) << std::endl;
 			*d=e;
 			sourceBuckets[t<<1]++;
 		} else {
 			std::cout << "Placed value with byte " << t << " in overflow bucket" << std::endl;
-			overflowCounts[t]++;
-			*o=e;
-			o++;
+                        overflowCounts[t]++;
+                        *o=e;
+                        o++;
 		}
-	});
+	};
+
+	auto noCount = [](auto &d, auto &t, auto &e){};
+
+	passOverInput(dealToOverflow,noCount);
+
+
+	/**
+		5) Process first pass of top bytes
+	*/
 
 	std::cout << "We overflowed " << (o-source) << " times." << std::endl;
-	std::cout << "We now known the following are live bits: " << std::endl << std::bitset<sizeof(INT)*3>(livebits) << std::endl;
+	std::cout << "We now known the following are live bits: " << std::endl << std::bitset<sizeof(INT)*8>(livebits) << std::endl;
 
 	//deal overflow into overflow buffer
 	overflowMaxSize=(o-source);
@@ -547,18 +567,29 @@ struct elem {
 
 
 typedef uint64_t targetType;
-auto targetLength = 512;
 
 int main(int argc, char *argv[]) {
 
-	if(argc == 2) {
+	auto targetLength = 512;
+
+	if(argc >= 2) {
 		targetLength = atoi(argv[1]);
 	}
 
-	std::cout << "Making random input of size " << targetLength << std::endl;
+	targetType* values = new targetType[targetLength];
 
-	targetType values[targetLength];
-	make_random(values, targetLength);
+	if(argc > 2) {
+		std::cout << "Making fixed input of size " << targetLength << " with values: " << std::flush;
+		for(int i = 0; i < targetLength; i++) {
+		  auto val = atoi(argv[i+2]);
+		  std::cout << val << " " << std::flush;
+		  values[i] = val;
+		}
+		std::cout << std::endl;
+	} else {
+		std::cout << "Making random input of size " << targetLength << std::endl;
+		make_random(values, targetLength);
+	}
 
 	fr<targetType, targetType>(values, targetLength);
 
