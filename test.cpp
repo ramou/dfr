@@ -444,48 +444,56 @@ void fr(ELEM *source, auto length) {
 		}
 	};
 
-	doEstimates();
 	auto currentByte = 8-neededBytes;
-	auto o = source;
+	auto overflow = source;
 
 	std::cout << "We need " << neededBytes << " byte(s)." << std::endl;
 
-	auto passOverInput = [&source, &length, &o, &livebits, &bitmask, &currentByte, &sourceBuckets, &overflowCounts, &destination](auto deal, auto &count) {
-		std::for_each(source, source+length, [&livebits, &bitmask, &currentByte, &sourceBuckets, &overflowCounts, &o, &destination, &deal, &count](auto &e){
-	                auto t = ((reinterpret_cast<INT>(e))>>currentByte) & 255;
-                	auto d = sourceBuckets[t<<1];
-        	        livebits |= bitmask ^ reinterpret_cast<INT>(e);
-			deal(d,t,e,o);
-			count(d,t,e);
+	auto passOverInput = [&livebits, &bitmask, &currentByte, &sourceBuckets, &overflowCounts, &destination](const auto &start, const auto &end, auto deal, auto &gatherStats) {
+		std::for_each(start, end, [&livebits, &bitmask, &currentByte, &sourceBuckets, &overflowCounts, &destination, &deal, &gatherStats](auto &element){
+	                auto targetBucketIndex = ((reinterpret_cast<INT>(element))>>currentByte) & 255;
+			deal(targetBucketIndex, element);
+			gatherStats(targetBucketIndex, element);
 	        });
 	};
 
-	auto dealToOverflow = [&sourceBuckets, &overflowCounts](auto &d, auto &t, auto &e, auto &o) {
-		if(d < sourceBuckets[(t<<1)+1]) {
-			*d=e;
-			sourceBuckets[t<<1]++;
+	auto dealWithOverflow = [&overflow, &sourceBuckets, &overflowCounts](auto &targetBucketIndex, auto &element) {
+		auto currentDestination = sourceBuckets[targetBucketIndex<<1];
+		if(currentDestination < sourceBuckets[(targetBucketIndex<<1)+1]) {
+			*currentDestination=element;
+			sourceBuckets[targetBucketIndex<<1]++;
 		} else {
-			std::cout << "Placed value with byte " << t << " in overflow bucket" << std::endl;
-                        overflowCounts[t]++;
-                        *o=e;
-                        o++;
+			std::cout << "Placed value with byte " << targetBucketIndex << " in overflow bucket" << std::endl;
+                        overflowCounts[targetBucketIndex]++;
+                        *overflow=element;
+                        overflow++;
 		}
 	};
 
-	auto noCount = [](auto &d, auto &t, auto &e){};
+	auto dealToOverflow = [&overflowBuckets](auto &targetBucketIndex, auto &element) {
+		auto currentDestination = overflowBuckets[targetBucketIndex];
+		*currentDestination=element;
+                overflowBuckets[targetBucketIndex]++;
+	};
 
-	passOverInput(dealToOverflow,noCount);
+	auto noStats = [](auto &targetBucketIndex, auto &element){};
+
+	auto gatherLiveBits = [&livebits, &bitmask](auto &targetBucketIndex, auto &element){
+		livebits |= bitmask ^ reinterpret_cast<INT>(element);
+	};
+
+        doEstimates();
+	passOverInput(source, source+length, dealWithOverflow, gatherLiveBits);
 
 
 	/**
 		5) Process first pass of top bytes
 	*/
-
-	std::cout << "We overflowed " << (o-source) << " times." << std::endl;
+	std::cout << "We overflowed " << (overflow-source) << " times." << std::endl;
 	std::cout << "We now known the following are live bits: " << std::endl << std::bitset<sizeof(INT)*8>(livebits) << std::endl;
 
 	//deal overflow into overflow buffer
-	overflowMaxSize=(o-source);
+	overflowMaxSize=(overflow-source);
 	overflowBuffer=(ELEM*)malloc(2*overflowMaxSize*sizeof(ELEM));
 
 	std::cout << "We made a buffer of length " << (2*overflowMaxSize) <<  std::endl;
@@ -505,20 +513,14 @@ void fr(ELEM *source, auto length) {
 
 	std::cout << "We succeeded in building overflow buckets."  << std::endl;
 
+	passOverInput(source, overflow, dealToOverflow, noStats);
 
-		//deal into overflow buffer
-	std::for_each(source, o, [&currentByte, &overflowBuckets](auto &e) {
-		auto t = ((reinterpret_cast<INT>(e))>>currentByte) & 255;
-		auto d = overflowBuckets[t];
-		*d=e;
-		overflowBuckets[t]++;
-	});
 
 	std::cout << "We succeeded in dealing into the overflow buckets."  << std::endl;
 
-	std::for_each(overflowBuffer, overflowBuffer+(overflowMaxSize-1), [&currentByte](auto &e) {
-		auto t = ((reinterpret_cast<INT>(e))>>currentByte) & 255;
-		std::cout << "overflow value: " << t << std::endl;
+	std::for_each(overflowBuffer, overflowBuffer+(overflowMaxSize-1), [&currentByte](auto &element) {
+		auto currentDestination = ((reinterpret_cast<INT>(element))>>currentByte) & 255;
+		std::cout << "overflow value: " << currentDestination << std::endl;
 	});
 
 	std::cout << "Now we swap buffers."  << std::endl;
@@ -544,11 +546,8 @@ void fr(ELEM *source, auto length) {
 
 	doEstimates();
 
-
 	//Between passes, use std::swap as necessarty for source and destination.
-
 	//Now we should define our lambdas.
-
 
 	//ERASE THIS! This just fixes our current state into source since we've 
 	//done an odd number of passes and we're still writing code!!!
