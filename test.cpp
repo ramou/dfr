@@ -354,6 +354,7 @@ void fr(ELEM *source, auto length) {
 	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
 	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
 
+
 	auto neededBits = ceil(std::log2(length/DIVERSION_THRESHOLD)); //ceil(log(1792/14)/log(2)),
 
 	//std::cout << "We need " << neededBits << " bits for diverting " << length << " with diversion threshold " << DIVERSION_THRESHOLD << std::endl;
@@ -507,6 +508,8 @@ void fr(ELEM *source, auto length) {
 	std::cout << "Now we swap buffer counts."  << std::endl;
 	std::swap(sourceBuckets, destinationBuckets);
 
+
+	//Do the rest of current bytes (we started based on neededbytes)
 	currentByte++;
 
 	//At this point, source has our data in disjoint buckets and destination is ready.
@@ -547,6 +550,13 @@ typedef uint64_t targetType;
 auto targetLength = 512;
 
 int main(int argc, char *argv[]) {
+
+	if(argc == 2) {
+		targetLength = atoi(argv[1]);
+	}
+
+	std::cout << "Making random input of size " << targetLength << std::endl;
+
 	targetType values[targetLength];
 	make_random(values, targetLength);
 
