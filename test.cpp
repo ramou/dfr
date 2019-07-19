@@ -6,6 +6,7 @@
 #include <random>
 #include <limits>
 #include <cmath>
+#include <list>
 
 #ifdef DEBUG
 #include <bitset>
@@ -362,15 +363,18 @@ void fr(ELEM *source, auto length) {
 
 	auto foundLiveBits = 0;
 	auto neededBytes = sizeof(INT);
-
-	std::cout << "When sampling we found the following live bits: " << std::endl << std::bitset<sizeof(INT)*8>(livebits) << std::endl;
+		#ifdef DEBUG
+		std::cout << "When sampling we found the following live bits: " << std::endl << std::bitset<sizeof(INT)*8>(livebits) << std::endl;
+		#endif
 
 	const auto allBits = pow(2, sizeof(INT));
 	for(auto i = 1; i < allBits; i++) {
 		auto val = ((livebits >> (int)(allBits - i)) & 1);
 		foundLiveBits += val;
 		if(foundLiveBits==neededBits) {
-			std::cout << "We processed " << i << " bits before finding enough so our top bytes are " << neededBytes << std::endl;
+				#ifdef DEBUG
+				std::cout << "We processed " << i << " bits before finding enough so our top bytes are " << neededBytes << std::endl;
+				#endif
 			neededBytes = ceil((i+1)/8.0);
 			break;
 		}
@@ -446,7 +450,9 @@ void fr(ELEM *source, auto length) {
 	auto currentByte = 8-neededBytes;
 	auto overflow = source;
 
-	std::cout << "We need " << neededBytes << " byte(s)." << std::endl;
+		#ifdef DEBUG
+		std::cout << "We need " << neededBytes << " byte(s)." << std::endl;
+		#endif
 
 	auto passOverInput = [&livebits, &bitmask, &currentByte, &sourceBuckets, &overflowCounts, &destination](const auto &start, const auto &end, auto deal, auto &gatherStats) {
 		std::for_each(start, end, [&livebits, &bitmask, &currentByte, &sourceBuckets, &overflowCounts, &destination, &deal, &gatherStats](auto &element){
@@ -456,13 +462,15 @@ void fr(ELEM *source, auto length) {
 	        });
 	};
 
-	auto dealWithOverflow = [&overflow, &sourceBuckets, &overflowCounts](auto &targetBucketIndex, auto &element) {
+	auto dealWithOverflow = [&](auto &targetBucketIndex, auto &element) {
 		auto currentDestination = sourceBuckets[targetBucketIndex<<1];
 		if(currentDestination < sourceBuckets[(targetBucketIndex<<1)+1]) {
 			*currentDestination=element;
 			sourceBuckets[targetBucketIndex<<1]++;
 		} else {
-			std::cout << "Placed value with byte " << targetBucketIndex << " in overflow bucket" << std::endl;
+				#ifdef DEBUG
+				std::cout << "Placed value with byte " << targetBucketIndex << " in overflow bucket" << std::endl;
+				#endif
                         overflowCounts[targetBucketIndex]++;
                         *overflow=element;
                         overflow++;
@@ -473,6 +481,10 @@ void fr(ELEM *source, auto length) {
                         }
 		}
 	};
+
+	auto dealExact = [&](auto &targetBucketIndex, auto &element) {
+		
+	}
 
 	auto dealToOverflow = [&overflowBuckets](auto &targetBucketIndex, auto &element) {
 		auto currentDestination = overflowBuckets[targetBucketIndex];
@@ -486,96 +498,162 @@ void fr(ELEM *source, auto length) {
 		livebits |= bitmask ^ reinterpret_cast<INT>(element);
 	};
 
-auto processOverflow = [&](){
-	//Check if overflow is in source or if it still fits within existing buffer.
-	if(source <= overflow < (source+length)) {
-		//We used up the old overflow so we need a bigger overflow.
+	int countedByte;
+	auto countForByte = [&] (auto &targetBucketIndex, auto &element) {
+		auto countedBucketIndex = ((reinterpret_cast<INT>(element))>>countedByte) & 255;
+		bucketCounts[countedBucketIndex]++;
+	};
 
-		//Make a new buffer
-		auto newsize = overflowMaxSize + overflow-source;
-		ELEM *newOverflowBuffer;
-		newOverflowBuffer = (ELEM*)malloc(2*newOverflowBuffer*sizeof(ELEM));
-		std::cout << "We made a new overflow buffer of length " << (2*newOverflowBuffer) <<  std::endl;
+	auto convertCountsToContiguousBuckets = [](auto counts, auto buckets) {
+		auto currentBucket = &buckets[1];
+		auto previousBucket = &buckets[0];
 
-		// Swap in the new overflow buffer, keeping a pointer to the old one for now.
-		ELEM *oldOverflowBuffer = overflowBuffer;
-		overflowBuffer=newOverflowBuffer;
+		std::for_each(counts, counts+256, [&currentBucket, &previousBucket](auto &count) {
+				currentBucket[0]=previousBucket[0]+count;
+				currentBucket++;
+				previousBucket++;
+		});
 
-		//build overflow buckets
-		overflowBuckets[0]=overflowBuffer;
-		convertCountsToContiguousBuckets(overflowCounts, overflowBuckets);
+		//Please confirm that it magically knows how to do this because counts is defined somewhere as an array.
+		std::memset(counts, 0, sizeof(counts));
 
-		//pass left-to right from the overflow buffer, then from the front of the source also used as overflow buffer.
-		passOverInput(oldOverflowBuffer+overflowMaxSize, oldOverflowBuffer+(2*overflowMaxSize), dealToOverflow, noStats);
-		passOverInput(source, overflow, dealToOverflow, noStats);
+	};
 
-		//Assign the new buffer size.
-		overflowMaxSize = newsize;
+	auto processOverflow = [&]{
+		//Check if overflow is in source or if it still fits within existing buffer.
+		if((source <= overflow) && ( overflow < (source+length))) {
+			//We used up the old overflow so we need a bigger overflow.
 
-		//Kill old buffer
-		// "If ptr is a null pointer, the function does nothing."
-		// --http://www.cplusplus.com/reference/cstdlib/free/
-		free(oldOverflowBuffer);
-	} else {
-		overflowBuckets[0]=overflowBuffer;
-		convertCountsToContiguousBuckets(overflowCounts, overflowBuckets);
-		passOverInput(overflowBuffer+overflowMaxSize,overflow, dealToOverflow, noStats)
-	}
-	if(overflowMaxSize > 0) overflow = overflowBuffer+overflowMaxSize;
-}
+			//Make a new buffer
+			int newsize = overflowMaxSize + overflow-source;
+			ELEM *newOverflowBuffer;
+			newOverflowBuffer = (ELEM*)malloc(2*newsize*sizeof(ELEM));
+				#ifdef DEBUG
+				std::cout << "We made a new overflow buffer of length " << (2*newsize) <<  std::endl;
+				#endif
+
+			// Swap in the new overflow buffer, keeping a pointer to the old one for now.
+			ELEM *oldOverflowBuffer = overflowBuffer;
+			overflowBuffer=newOverflowBuffer;
+
+			//build overflow buckets
+			overflowBuckets[0]=overflowBuffer;
+			convertCountsToContiguousBuckets(overflowCounts, overflowBuckets);
+
+			//pass left-to right from the overflow buffer, then from the front of the source also used as overflow buffer.
+			passOverInput(oldOverflowBuffer+overflowMaxSize, oldOverflowBuffer+(2*overflowMaxSize), dealToOverflow, noStats);
+			passOverInput(source, overflow, dealToOverflow, noStats);
+
+			//Assign the new buffer size.
+			overflowMaxSize = newsize;
+			//Kill old buffer
+			// "If ptr is a null pointer, the function does nothing."
+			// --http://www.cplusplus.com/reference/cstdlib/free/
+			free(oldOverflowBuffer);
+
+		} else {
+			overflowBuckets[0]=overflowBuffer;
+			convertCountsToContiguousBuckets(overflowCounts, overflowBuckets);
+			passOverInput(overflowBuffer+overflowMaxSize,overflow, dealToOverflow, noStats);
+		}
+	};
 
 
         doEstimates();
-	passOverInput(source, source+length, dealWithOverflow, gatherLiveBits);
 
 
 	/**
 		5) Process first pass of top bytes
 	*/
-	std::cout << "We overflowed " << (overflow-source) << " times." << std::endl;
-	std::cout << "We now known the following are live bits: " << std::endl << std::bitset<sizeof(INT)*8>(livebits) << std::endl;
 
-	//deal overflow into overflow buffer
-	overflowMaxSize=(overflow-source);
-	overflowBuffer=(ELEM*)malloc(2*overflowMaxSize*sizeof(ELEM));
+	std::list<int> topBytes (bytecount);
+	std::list<int> bottomBytes (bytecount);
 
-	std::cout << "We made a buffer of length " << (2*overflowMaxSize) <<  std::endl;
+	auto buildByteLists = [&] {
+		for(int i = 0; i < bytecount) {
+			if((livebits >> i) & 255)) {
+				if(i<currentByte) bottomBytes.push_back(i);
+				else topBytes.push_back(i);
+			}
+		}
+	};
 
-		//convert overflow counts into target buckets
-	overflowBuckets[0]=overflowBuffer;
-	auto currentBucket = &overflowBuckets[1];
-	auto previousBucket = &overflowBuckets[0];
+	//
+	// Process  Top Bytes
+	//
 
-	std::for_each(overflowCounts, overflowCounts+256, [&currentBucket, &previousBucket](auto &count) {
-		currentBucket[0]=previousBucket[0]+count;
-		currentBucket++;
-		previousBucket++;
-	});
+	if(topBytes.size() == 1) { // Just do a single count pass first and in a very un-fast-radix-say deal exactly into destination
 
-		//Stuart:: so far this looks right
+		buildByteLists();
+	} else if(topBytes.size() == 2) { // We need a pass that does count capturing. Forget live-bit catching. Then deal back in place.
 
-	std::cout << "We succeeded in building overflow buckets."  << std::endl;
+		buildByteLists();
+	} else {
+		//Do a first pass
+		passOverInput(source, source+length, dealWithOverflow, gatherLiveBits);
+			#ifdef DEBUG
+			std::cout << "We overflowed " << (overflow-source) << " times." << std::endl;
+			std::cout << "We now known the following are live bits: " << std::endl << std::bitset<sizeof(INT)*8>(livebits) << std::endl;
+			#endif
 
-	passOverInput(source, overflow, dealToOverflow, noStats);
-
-
-	std::cout << "We succeeded in dealing into the overflow buckets."  << std::endl;
-
-	std::for_each(overflowBuffer, overflowBuffer+(overflowMaxSize-1), [&currentByte](auto &element) {
-		auto currentDestination = ((reinterpret_cast<INT>(element))>>currentByte) & 255;
-		std::cout << "overflow value: " << currentDestination << std::endl;
-	});
-
-	std::cout << "Now we swap buffers."  << std::endl;
-
-	//swap source and destination
-	std::swap(source, destination);
-	std::cout << "Now we swap buffer counts."  << std::endl;
-	std::swap(sourceBuckets, destinationBuckets);
+		//deal overflow into overflow buffer
+		processOverflow();
 
 
-	//Do the rest of current bytes (we started based on neededbytes)
-	currentByte++;
+			#ifdef DEBUG
+			std::cout << "We succeeded in dealing into the overflow buckets."  << std::endl;
+			std::for_each(overflowBuffer, overflowBuffer+(overflowMaxSize-1), [&currentByte](auto &element) {
+				auto currentDestination = ((reinterpret_cast<INT>(element))>>currentByte) & 255;
+				std::cout << "overflow value: " << currentDestination << std::endl;
+			});
+			#endif
+
+		//swap source and destination
+			#ifdef DEBUG
+			std::cout << "Now we swap buffers."  << std::endl;
+			#endif
+
+		std::swap(source, destination);
+
+			#ifdef DEBUG
+			std::cout << "Now we swap buffer counts."  << std::endl;
+			#endif
+
+		std::swap(sourceBuckets, destinationBuckets);
+
+		topBytes.pop_front();
+
+		while(topBytes.size() > 2) {
+			currentByte=topBytes.pop_front();
+
+			doEstimates();
+
+			//This takes sourceBuckets and oveflowBuckets
+			passOverInputs(source, sourceBuckets, overflowBuffer, overflowBuckets, dealWithOverflow, noStats);
+			processOverflow();
+			std::swap(source, destination);
+			std::swap(sourceBuckets, destinationBuckets);
+		}
+
+		currentByte=topBytes.pop_front();
+		countedByte=topBytes.pop_front();;
+		doEstimates();
+		passOverInputs(source, sourceBuckets, overflowBuffer, overflowBuckets, dealWithOverflow, countForByte);
+		processOverflow();
+		std::swap(source, destination);
+                std::swap(sourceBuckets, destinationBuckets);
+
+		sourceBuckets[0]=destination;
+		convertCountsToContiguousBuckets(bucketCounts, sourceBuckets);
+
+		//Deal last pass in top bytes
+		passOverInputs(source, sourceBuckets, overflowBuffer, overflowBuckets, dealExact, noStats);
+
+
+	}
+	//Do the bottom bytes (we started based on neededbytes)
+
+		// Do passes after the first pass
 
 	//At this point, source has our data in disjoint buckets and destination is ready.
 	//buckets contains the start and end positions of each disjoint bucket in source.
@@ -585,16 +663,13 @@ auto processOverflow = [&](){
 
 	//redo estimates
 
-	std::cout << "Now we redo our estimates."  << std::endl;
+		#ifdef DEBUG
+		std::cout << "Now we redo our estimates."  << std::endl;
+		#endif
 
 	doEstimates();
 
-	//Between passes, use std::swap as necessarty for source and destination.
-	//Now we should define our lambdas.
 
-	//ERASE THIS! This just fixes our current state into source since we've 
-	//done an odd number of passes and we're still writing code!!!
-	std::swap(source, destination);
 
 	//We're done! Delete all the stuff we made
 	delete [] destination;
