@@ -325,8 +325,7 @@ void fr(ELEM *source, auto length) {
 	//care. We may also do something like initializing it for 2% of data, which
 	//should be a realistic expectation given the newer sampling approach.
 	int overflowMaxSize = 0;
-	ELEM *overflowBuffer;
-
+	ELEM *overflowBuffer = NULL;
 
 	/**
 		3) Estimating relevant top (high-order) bytes
@@ -467,6 +466,11 @@ void fr(ELEM *source, auto length) {
                         overflowCounts[targetBucketIndex]++;
                         *overflow=element;
                         overflow++;
+
+			//We're at the end of the initial overflow size. This can happen at most once per pass
+                        if(overflow ==  overflowBuffer+(2*overflowMaxSize)) {
+				overflow = source;
+                        }
 		}
 	};
 
@@ -481,6 +485,45 @@ void fr(ELEM *source, auto length) {
 	auto gatherLiveBits = [&livebits, &bitmask](auto &targetBucketIndex, auto &element){
 		livebits |= bitmask ^ reinterpret_cast<INT>(element);
 	};
+
+auto processOverflow = [&](){
+	//Check if overflow is in source or if it still fits within existing buffer.
+	if(source <= overflow < (source+length)) {
+		//We used up the old overflow so we need a bigger overflow.
+
+		//Make a new buffer
+		auto newsize = overflowMaxSize + overflow-source;
+		ELEM *newOverflowBuffer;
+		newOverflowBuffer = (ELEM*)malloc(2*newOverflowBuffer*sizeof(ELEM));
+		std::cout << "We made a new overflow buffer of length " << (2*newOverflowBuffer) <<  std::endl;
+
+		// Swap in the new overflow buffer, keeping a pointer to the old one for now.
+		ELEM *oldOverflowBuffer = overflowBuffer;
+		overflowBuffer=newOverflowBuffer;
+
+		//build overflow buckets
+		overflowBuckets[0]=overflowBuffer;
+		convertCountsToContiguousBuckets(overflowCounts, overflowBuckets);
+
+		//pass left-to right from the overflow buffer, then from the front of the source also used as overflow buffer.
+		passOverInput(oldOverflowBuffer+overflowMaxSize, oldOverflowBuffer+(2*overflowMaxSize), dealToOverflow, noStats);
+		passOverInput(source, overflow, dealToOverflow, noStats);
+
+		//Assign the new buffer size.
+		overflowMaxSize = newsize;
+
+		//Kill old buffer
+		// "If ptr is a null pointer, the function does nothing."
+		// --http://www.cplusplus.com/reference/cstdlib/free/
+		free(oldOverflowBuffer);
+	} else {
+		overflowBuckets[0]=overflowBuffer;
+		convertCountsToContiguousBuckets(overflowCounts, overflowBuckets);
+		passOverInput(overflowBuffer+overflowMaxSize,overflow, dealToOverflow, noStats)
+	}
+	if(overflowMaxSize > 0) overflow = overflowBuffer+overflowMaxSize;
+}
+
 
         doEstimates();
 	passOverInput(source, source+length, dealWithOverflow, gatherLiveBits);
@@ -555,6 +598,10 @@ void fr(ELEM *source, auto length) {
 
 	//We're done! Delete all the stuff we made
 	delete [] destination;
+	delete [] sourceBuckets;
+	delete [] destinationBuckets;
+	delete [] overflowBuckets;
+	free(overflowBuffer);
 }
 
 
