@@ -292,6 +292,7 @@ void dfr(ELEM *source, auto length) {
 
 	//The buffer for doing radix passes
 	ELEM *destination = new ELEM[length];
+	//std::memset(destination, 0, length*sizeof(ELEM)); //Not sure I need this
 
 	//These will start as pairs of positions pointing to the start of estimated
 	//buckets. As values are placed, the second entry will increment. After all
@@ -302,22 +303,27 @@ void dfr(ELEM *source, auto length) {
 	//
 	//We need two sets of these, one for each buffer, and we'll swap them
 	ELEM **sourceBuckets = new ELEM*[512];
+	//std::memset(sourceBuckets, 0, 512*sizeof(ELEM*)); //Not sure I need this
+
 	ELEM **destinationBuckets = new ELEM*[512];
+	//std::memset(destinationBuckets, 0, 512*sizeof(ELEM*)); //Not sure I need this
+
 
 	//Initially these will be the starting positions into the overflow buffer
 	//Once dumped into the overflow buffer, they will then be the ending positions
 	//when dealing out of the overflow buffer
 	ELEM **overflowBuckets = new ELEM*[256];
+	//std::memset(overflowBuckets, 0, 256*sizeof(ELEM*));//Not sure I need this
 
 	//If we ever actually count elements upon placing (e.g. a last pass), we should
 	//use this before converting it to *buckets*
 	unsigned* bucketCounts = new unsigned[256];
-        std::memset(bucketCounts, 0, sizeof(bucketCounts));
+        std::memset(bucketCounts, 0, 256*sizeof(unsigned)); //This is needed!
 
 	//We actually count for overflow, so we must use this. We'll just convert to 
 	//overflowBuckets when done because that's easier to process.
 	unsigned* overflowCounts = new unsigned[256];
-        std::memset(overflowCounts, 0, sizeof(overflowCounts));
+        std::memset(overflowCounts, 0, 256*sizeof(unsigned)); //This is needed!
 
 
 	//We don't initialize this till we need it. We should check overflowMaxSize 
@@ -352,10 +358,17 @@ void dfr(ELEM *source, auto length) {
 	//represent it because it's not going to spread the sizes as evenly, so
 	//it is to our advantage to under-represent that case with the liveness
 	//check.
-	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
-	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
-	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
 
+	/* Correctly random. Switch back to this when bugs resolved!
+	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
+	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
+	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
+	*/
+
+	// Fixed check to force repeatable bugs
+	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + 1));
+	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + 2));
+	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + 3));
 
 	auto neededBits = ceil(std::log2((float)(length)/(float)(DIVERSION_THRESHOLD))); //ceil(log(1792/14)/log(2)),
 
@@ -367,7 +380,13 @@ void dfr(ELEM *source, auto length) {
 		std::cout << "When sampling we found the following live bits: " << std::endl << std::bitset<sizeof(INT)*8>(livebits) << std::endl;
 		#endif
 
-	const auto allBits = pow(2, sizeof(INT));
+	const auto allBits = 8*sizeof(INT);
+
+                #ifdef DEBUG
+                std::cout << "We are working with a max of " << allBits << " bits." << std::endl;
+                #endif
+
+
 	for(auto i = 1; i < allBits; i++) {
 		auto val = ((livebits >> (int)(allBits - i)) & 1);
 		foundLiveBits += val;
@@ -383,10 +402,12 @@ void dfr(ELEM *source, auto length) {
         //std::cout << "we will need " << neededBytes << " passes." << std::endl;
 
 	int countedByte;
-	auto topBytes = new int[sizeof(INT)];
+	const auto topBytes = new int[sizeof(INT)];
+	std::memset(topBytes, 0, sizeof(INT)*sizeof(int));
 	auto topBytesSize = 0;
 
-	auto bottomBytes = new int[sizeof(INT)];
+	const auto bottomBytes = new int[sizeof(INT)];
+	std::memset(bottomBytes, 0, sizeof(INT)*sizeof(int));
         auto bottomBytesSize = 0;
 
 	const INT highBitMask = !((allBits-1) > neededBytes);
@@ -460,18 +481,25 @@ void dfr(ELEM *source, auto length) {
 		}
 
 		#ifdef DEBUG
-		std::cout << "These are the bucket starts and ends:" << std::endl;
-		for(auto i = 0; i < 256; i++) {
-			std::cout << "\t" << i << "\t" << (destinationBuckets[i<<1]-destination) << " to " <<  (destinationBuckets[(i<<1) + 1]-destination) << std::endl;
-		}
+		//std::cout << "These are the bucket starts and ends:" << std::endl;
+		//for(auto i = 0; i < 256; i++) {
+		//	std::cout << "\t" << i << "\t" << (destinationBuckets[i<<1]-destination) << " to " <<  (destinationBuckets[(i<<1) + 1]-destination) << std::endl;
+		//}
 		#endif
 	};
 
-	auto copyBuffer = [&destination] (const auto start, const auto end) {
-		std::memcpy(destination + (end-start), start, end-start);
+	auto copyBuffer = [&destination, &source] (const auto start, const auto end) {
+		std::memcpy(destination + (start-source), start, end-start);
 	};
 
-	auto swap = [&source, &destination, &sourceBuckets, &destinationBuckets] {
+	auto swap = [&source, &destination, &sourceBuckets, &destinationBuckets, &length] {
+                        #ifdef DEBUG
+                        for(int i = 0; i < length; i++) {
+                                std::cout << destination[i] << " ";
+                        }
+                        std::cout << std::endl;
+                        #endif
+
 		std::swap(source, destination);
 		std::swap(sourceBuckets, destinationBuckets);
 	};
@@ -534,6 +562,12 @@ void dfr(ELEM *source, auto length) {
 		}
 	};
 
+	auto simpleDeal = [&destinationBuckets](const auto &targetBucketIndex, const auto &element) {
+		auto currentDestination = destinationBuckets[0];
+                *currentDestination=element;
+                destinationBuckets[0]++;
+	};
+
 	auto dealExact = [&destinationBuckets](const auto &targetBucketIndex, const auto &element) {
 		auto currentDestination = destinationBuckets[targetBucketIndex<<1];
 		*currentDestination=element;
@@ -560,22 +594,28 @@ void dfr(ELEM *source, auto length) {
 
 	auto convertCountsToContiguousBuckets = [](const auto counts, const auto buckets, const auto buffer) {
 		buckets[0]=buffer;
-		auto currentBucket = &buckets[1];
-		auto previousBucket = &buckets[0];
+		auto currentBucket = buckets+1;
+		auto previousBucket = buckets;
 
 		std::for_each(counts, counts+256, [&currentBucket, &previousBucket](auto &count) {
-			currentBucket[0]=previousBucket[0]+count;
+			*currentBucket=(*previousBucket)+count;
 			currentBucket++;
 			previousBucket++;
+			count=0;
 		});
-		std::memset(counts, 0, (sizeof(counts)*256));
-
 	};
 
 	auto processOverflow = [&](const auto &currentByte){
 
                 #ifdef DEBUG
-                std::cout << "HERE! " <<  currentByte  << std::endl;
+                std::cout << "Processing Overflow At Byte " <<  currentByte  << std::endl;
+                #endif
+
+
+                #ifdef DEBUG
+                std::cout << "\tSource: " <<  source  << std::endl;
+		std::cout << "\tOverflowBuffer: " <<  overflowBuffer  << std::endl;
+		std::cout << "\tOverflow: " <<  overflow  << std::endl;
                 #endif
 
 
@@ -585,12 +625,23 @@ void dfr(ELEM *source, auto length) {
 
 			//Make a new buffer
 			int newsize = overflowMaxSize + overflow-source;
-			ELEM *newOverflowBuffer;
-			newOverflowBuffer = (ELEM*)malloc(2*newsize*sizeof(ELEM));
-
-			// Swap in the new overflow buffer, keeping a pointer to the old one for now.
 			ELEM *oldOverflowBuffer = overflowBuffer;
-			overflowBuffer=newOverflowBuffer;
+
+                #ifdef DEBUG
+                std::cout << "\tAllocating overflow buffer of size " << 2*newsize << std::endl;
+                #endif
+
+			overflowBuffer = new ELEM[2*newsize];
+
+		#ifdef DEBUG
+                std::cout << "\tCreated overflow buffer at " << overflowBuffer << std::endl;
+                #endif
+
+
+                #ifdef DEBUG
+                std::cout << "\tConverting overflowCounts to overflowBuckets" << std::endl;
+                #endif
+
 
 			//build overflow buckets
 			convertCountsToContiguousBuckets(overflowCounts, overflowBuckets, overflowBuffer);
@@ -601,11 +652,30 @@ void dfr(ELEM *source, auto length) {
 
 			//Assign the new buffer size.
 			overflowMaxSize = newsize;
+			//point overflow at the new space
+			overflow = overflowBuffer+newsize;
+
 			//Kill old buffer
-			// "If ptr is a null pointer, the function does nothing."
-			// --http://www.cplusplus.com/reference/cstdlib/free/
-			free(oldOverflowBuffer);
+			#ifdef DEBUG
+	                std::cout << "killing overflow at " << oldOverflowBuffer << std::endl;
+        	        #endif
+			if(oldOverflowBuffer) {
+                #ifdef DEBUG
+                std::cout << "\t We delete the overflowBuffer at " << oldOverflowBuffer << std::endl;
+                #endif
+
+				delete [] oldOverflowBuffer;
+				//free(oldOverflowBuffer);
+			} else {
+                #ifdef DEBUG
+                std::cout << "\t No need to delete overflow that wasn't allocated" << std::endl;
+                #endif
+
+			}
 		} else {
+                #ifdef DEBUG
+                std::cout << "\tOverflow is pointing in overflow buffer: " <<  overflow  << std::endl;
+                #endif
 			if(overflowMaxSize == 0) return; //We have no overflow, overflow is probably null
 			convertCountsToContiguousBuckets(overflowCounts, overflowBuckets, overflowBuffer);
 			passOverInput(overflowBuffer+overflowMaxSize,overflow, currentByte, dealToOverflow, noStats);
@@ -619,17 +689,29 @@ void dfr(ELEM *source, auto length) {
         //
         // This is so cheap let's not do anything fancy
 	auto buildByteLists = [&](const auto &threshold) {
+			#ifdef DEBUG
+			std::cout << "building byte list around threshold " << threshold<<  std::endl;
+                	std::cout << "\twith these bits: " << std::bitset<sizeof(INT)*8>(livebits) << std::endl;
+                        std::cout << "\ttopBytesSize old: " << topBytesSize <<  std::endl;
+                        std::cout << "\tbottomBytesSize old: " << bottomBytesSize <<  std::endl;
+			#endif
 		for(int i = 0; i < bytecount; i++) {
 			if((livebits >> (i*8)) & 255) {
 				if(i < threshold) {
 					bottomBytes[bottomBytesSize] = i;
 					bottomBytesSize++;
 				} else if(i >= threshold) {
-					topBytes[bottomBytesSize] = i;
+			#ifdef DEBUG
+                        std::cout << "found live byte " << ((livebits >> (i*8)) & 255) << " at " << i <<  std::endl;
+                        #endif
+
+					topBytes[topBytesSize] = i;
 					topBytesSize++;
 				}
 			}
 		}
+                        std::cout << "\ttopBytesSize new: " << topBytesSize <<  std::endl;
+                        std::cout << "\tbottomBytesSize new: " << bottomBytesSize <<  std::endl;
 	};
 
 	bool hasByteLists = false;
@@ -641,6 +723,9 @@ void dfr(ELEM *source, auto length) {
 		#ifdef DEBUG
                 std::cout << "HERE! Running FR with neededBytes: " << neededBytes  << " and threshold byte " << thresholdByte << " and numBytes " << numBytes << std::endl;
 		std::cout << "But numBytes might not be reliable" << std::endl;
+		std::cout << "topBytes: " << topBytes << std::endl;
+		std::cout << "bottomBytes: " << bottomBytes << std::endl;
+		std::cout << "bytes: " << bytes << std::endl;
                 #endif
 
 	        if(neededBytes == 1) { // Just do a single count pass first and in a very un-fast-radix-way deal exactly into destination
@@ -671,7 +756,6 @@ void dfr(ELEM *source, auto length) {
 				buildByteLists(thresholdByte);
 				hasByteLists=true;
 			}
-
 			swap();
 	        } else {
 
@@ -683,73 +767,144 @@ void dfr(ELEM *source, auto length) {
 
 			//Do a first pass
 			doEstimates();
-
 			if(hasByteLists) {
-					passOverInput(source, source+length, (thresholdByte), dealWithOverflow, noStats);
+					currentByte = thresholdByte;
+					passOverInput(source, source+length, currentByte, dealWithOverflow, noStats);
 			} else {
-					passOverInput(source, source+length, bytes[0], dealWithOverflow, gatherLiveBits);
+					currentByte = bytes[0];
+					passOverInput(source, source+length, currentByte, dealWithOverflow, gatherLiveBits);
 					buildByteLists(thresholdByte);
 					hasByteLists=true;
 			}
+			processOverflow(currentByte);
+			swap();
 
                 #ifdef DEBUG
 		if(hasByteLists){
                 	std::cout << "HERE! After the first pass we may have built the bytelists and now numBytes is " << numBytes << std::endl;
+			std::cout << "\ttopBytesSize: " << topBytesSize <<  std::endl;
+			std::cout << "\tbottomBytesSize: " << bottomBytesSize <<  std::endl;
 		}
                 #endif
 
-		//We have to account for the newly generated numBytes being either 1 or 2, which means we found enough dead bits to eliminate
+		//We have to account for the newly generated numBytes being either 0, 1, 2 or 3 (we did one pass, but numbytes still has it... 
+		//our one pass could theoretically have been over dead bits), which means we found enough dead bits to eliminate
 		//passes that would have got us caught up above in the numBytes == 1 or numBytes == 2 section. Sure it's annoying, but actually
 		//doing the deadbit passes would be more annoying, so rejoice!
 
-
-                #ifdef DEBUG
-                std::cout << "HERE! Processing Overflow" << std::endl;
-                #endif
-
-			processOverflow(bytes[0]);
-
-                #ifdef DEBUG
-                std::cout << "HERE! Swapping sources" << std::endl;
-                #endif
-
+		if(topBytesSize == 0) { //We did a pass with overflow, but we shouldn't have done any passes.
+			destinationBuckets[0] = destination;
+			passOverInputs(source, overflowBuffer, currentByte, simpleDeal, noStats);
 			swap();
+		} else if (topBytesSize == 1) {	//We did a pass with overflow but we were only supposed to do one pass anyway
+							// Since we didn't count we need to fix that
+							// Further, if that one pass was the lowest-order bit, we may have mistakenly
+							// Done a dead pass and need to account for that
 
                 #ifdef DEBUG
-                std::cout << "HERE! Processing Middle Runs: " << std::endl;
+                if(hasByteLists){
+                        std::cout << "topBytesSize == 1 so we need to fix our first pass. " << std::endl;
+                }
                 #endif
 
-			for(int i = 1; i < (numBytes - 2); i++) {
-					doEstimates();
+
+			if(currentByte != bytes[0]) {//This means currentByte==0, otherwise it wouldn't have been in the initial 
+							// bytes/threshold byte. basically did a bad pass and just need to swap back
+							// The good news is that we shouldn't have done that pass so we just need a
+							// simple deal. Since this simple deal gets enough info to fix stuff, let's
+							// also do the deal we should have done.
+
                 #ifdef DEBUG
-                std::cout << "HERE! Passing over Inputs in pass " << i << std::endl;
+                if(hasByteLists){
+                        std::cout << "\t our first pass was the lowest order bit, but it was a dead pass." << std::endl;
+                }
                 #endif
 
-					passOverInputs(source, overflowBuffer, bytes[i], dealWithOverflow, noStats);
+
+				destinationBuckets[0] = destination;
+				countedByte = bytes[0];
+	                        passOverInputs(source, overflowBuffer, currentByte, simpleDeal, countForByte);
+        	                swap();
+				convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
+				passOverInput(source, source+length, bytes[0], dealExact, noStats);
+				swap();
+			} else {			//Ok, we did a pass, it was needed, but we should have made it an
+							// exact pass. We have to fix that here.
+
                 #ifdef DEBUG
-                std::cout << "HERE! Processing Overflows in pass " << i  << std::endl;
+                if(hasByteLists){
+                        std::cout << "\t our first pass was a live pass, so we just need to fix it a bit." << std::endl;
+                }
                 #endif
-					processOverflow(bytes[i]);
-					swap();
+
+				destinationBuckets[0] = destination;
+				passOverInputs(source, overflowBuffer, currentByte, simpleDeal, noStats);
+				swap();
+				copyBuffer(source, source+length);
+				swap();
 			}
 
-                #ifdef DEBUG
-                std::cout << "HERE2!" << std::endl;
-                #endif
+		} else if (numBytes == 2) {	//We did one of two passes. If it was the lowest order pass it may
+							// have been a dead pass.
+			if(currentByte != bytes[0]) {//We did a useless pass and have to undo that.
+				destinationBuckets[0] = destination;
+				passOverInputs(source, overflowBuffer, currentByte, simpleDeal, noStats);
+				swap();
+				doEstimates();
+				countedByte = bytes[1];
+				passOverInput(source, source+length, thresholdByte, dealWithOverflow, countForByte);
+	                        processOverflow(thresholdByte);
+        	                swap();
+                                convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
+				passOverInputs(source, overflowBuffer, bytes[1], dealExact, noStats);
+				swap();
+			} else {	//We did a real pass, it just would have helped to have counted first.
+				countedByte = bytes[1];
+				passOverInputs(source, overflowBuffer, currentByte, noDeal, countForByte);
+				convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
+				passOverInputs(source, overflowBuffer, currentByte, dealExact, noStats);
+				swap();
+			}
+
+		} else {
 
 
-			//Do last two passes
-			countedByte=bytes[numBytes-1];
-			doEstimates();
-			passOverInputs(source, overflowBuffer, bytes[numBytes-2], dealWithOverflow, countForByte);
-			processOverflow(bytes[numBytes-2]);
-			std::swap(source, destination);
+                	#ifdef DEBUG
+                	std::cout << "HERE! Processing Middle Runs: " << std::endl;
+                	#endif
 
-			convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
+				for(int i = 1; i < (numBytes - 2); i++) {
+						doEstimates();
+                	#ifdef DEBUG
+                	std::cout << "HERE! Passing over Inputs in pass " << i << std::endl;
+                	#endif
 
-			//Deal last pass in top bytes
-			passOverInputs(source, overflowBuffer, countedByte, dealExact, noStats);
-			swap();
+						passOverInputs(source, overflowBuffer, bytes[i], dealWithOverflow, noStats);
+                	#ifdef DEBUG
+                	std::cout << "HERE! Processing Overflows in pass " << i  << std::endl;
+                	#endif
+						processOverflow(bytes[i]);
+						swap();
+				}
+
+                	#ifdef DEBUG
+                	std::cout << "Processing Last Two Runs for bytes " << bytes[numBytes-1] << " and " << bytes[numBytes-2] << std::endl;
+                	#endif
+
+
+				//Do last two passes
+				countedByte=bytes[numBytes-1];
+				doEstimates();
+				passOverInputs(source, overflowBuffer, bytes[numBytes-2], dealWithOverflow, countForByte);
+				processOverflow(bytes[numBytes-2]);
+				swap();
+
+				convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
+
+				//Deal last pass in top bytes
+				passOverInputs(source, overflowBuffer, countedByte, dealExact, noStats);
+				swap();
+			}
 		}
 	};
 
@@ -760,113 +915,141 @@ void dfr(ELEM *source, auto length) {
 
 	fr(topBytes, topBytesSize);
 
-	//At this point, source has our data in disjoint buckets and destination is ready.
-	//buckets contains the start and end positions of each disjoint bucket in source.
-	//overflowBuffer is the contiguous secondary source, with end buckets defined by 
-	//overflowBuckets, and is twice overflowMaxSize so we can deal into it to before 
-	//we make use of the input as a buffer source to prevent writing over a live bucket.
+                        #ifdef DEBUG
+                        std::cout << "HERE2! We processed our " << topBytesSize << " top Bytes. Now to process the " << bottomBytesSize << " bottom bytes." << std::endl;
+                        #endif
 
-	// ((reinterpret_cast<INT>(element))>
+	if(bottomBytesSize > 0) {
 
-	auto getHighBits = [&highBitMask](const ELEM &element) {
-		return (reinterpret_cast<INT>(element)) & highBitMask;
-	};
 
-	INT currentBits = getHighBits(*source);
+		//At this point, source has our data in disjoint buckets and destination is ready.
+		//buckets contains the start and end positions of each disjoint bucket in source.
+		//overflowBuffer is the contiguous secondary source, with end buckets defined by
+		//overflowBuckets, and is twice overflowMaxSize so we can deal into it to before
+		//we make use of the input as a buffer source to prevent writing over a live bucket.
 
-	bool potentialLongRun = false;
-	bool definiteLongRun = false;
-	ELEM* startSmallRuns;
-	ELEM* endSmallRuns;
-	ELEM* startDefiniteLongRun;
-	ELEM* endDefiniteLongRun;
+		// ((reinterpret_cast<INT>(element))>
 
-	startSmallRuns = source;
+		auto getHighBits = [&highBitMask](const ELEM &element) {
+			return (reinterpret_cast<INT>(element)) & highBitMask;
+		};
 
-	for(ELEM* element = source+1; element < source+length; element += (DIVERSION_THRESHOLD>1)) {
-		const INT newBits = getHighBits(*element);
-		if(currentBits ^ highBitMask) { //Things changed
-			if(definiteLongRun) { // A long run has ended
-				//walk back by one to find the exact end of the long run
-				endDefiniteLongRun=element;
-				while(!(getHighBits(*(endDefiniteLongRun-1)) ^ currentBits)) endDefiniteLongRun--;
+		INT currentBits = getHighBits(*source);
 
-				//process the long run.
-				const auto oldSource = source;
-				const auto oldDestination = destination;
-				const auto oldLength = length;
-				source = startDefiniteLongRun;
-				destination = destination + (startDefiniteLongRun-source);
-				length = endDefiniteLongRun - startDefiniteLongRun;
+		bool potentialLongRun = false;
+		bool definiteLongRun = false;
+		ELEM* startSmallRuns;
+		ELEM* endSmallRuns;
+		ELEM* startDefiniteLongRun;
+		ELEM* endDefiniteLongRun;
 
-				fr(bottomBytes, bottomBytesSize);
-				if((bottomBytesSize+topBytesSize)%2) copyBuffer(startDefiniteLongRun, endDefiniteLongRun);
+		startSmallRuns = source;
 
-				source = oldSource;
-				destination = oldDestination;
-				length = oldLength;
+		for(ELEM* element = source+1; element < source+length; element += (DIVERSION_THRESHOLD>1)) {
+			const INT newBits = getHighBits(*element);
+			if(currentBits ^ highBitMask) { //Things changed
+				if(definiteLongRun) { // A long run has ended
+					//walk back by one to find the exact end of the long run
+					endDefiniteLongRun=element;
+					while(!(getHighBits(*(endDefiniteLongRun-1)) ^ currentBits)) endDefiniteLongRun--;
 
-				//Start a new short run
-				startSmallRuns=endDefiniteLongRun;
+					//process the long run.
+					const auto oldSource = source;
+					const auto oldDestination = destination;
+					const auto oldLength = length;
+					source = startDefiniteLongRun;
+					destination = destination + (startDefiniteLongRun-source);
+					length = endDefiniteLongRun - startDefiniteLongRun;
 
-				definiteLongRun=false;
+                        	#ifdef DEBUG
+                        	std::cout << "We found a run of length " << length << ". Running bottom bytes." << std::endl;
+                        	#endif
+
+
+					fr(bottomBytes, bottomBytesSize);
+					if((bottomBytesSize+topBytesSize)%2) copyBuffer(startDefiniteLongRun, endDefiniteLongRun);
+
+					source = oldSource;
+					destination = oldDestination;
+					length = oldLength;
+
+					//Start a new short run
+					startSmallRuns=endDefiniteLongRun;
+
+					definiteLongRun=false;
+				}
+				currentBits = newBits;
+				potentialLongRun = false;
+			} else { // Duplicate hit, figure out if we're a long run or just beginning to be one
+				if(!definiteLongRun) {
+					if(potentialLongRun) {
+						//Mark the potential start of a long run by walking back to find a change
+						//Also run the previous short runs
+						startDefiniteLongRun=element;
+						while((startDefiniteLongRun > source) && !(getHighBits(*(startDefiniteLongRun-1)) ^ currentBits)) startDefiniteLongRun--;
+
+						//Insertion Sort Long Runs
+						if(startSmallRuns != startDefiniteLongRun) {
+							endSmallRuns = startDefiniteLongRun;
+							insertionSort<INT, ELEM>(startSmallRuns, endSmallRuns-startSmallRuns);
+							if(topBytesSize%2) copyBuffer(startSmallRuns, endSmallRuns);
+						}
+
+						definiteLongRun=true;
+						potentialLongRun=false;
+					} else potentialLongRun = true;
+				}
 			}
-			currentBits = newBits;
-			potentialLongRun = false;
-		} else { // Duplicate hit, figure out if we're a long run or just beginning to be one
-			if(!definiteLongRun) {
-				if(potentialLongRun) {
-					//Mark the potential start of a long run by walking back to find a change
-					//Also run the previous short runs
-					startDefiniteLongRun=element;
-					while((startDefiniteLongRun > source) && !(getHighBits(*(startDefiniteLongRun-1)) ^ currentBits)) startDefiniteLongRun--;
+		}
 
-					//Insertion Sort Long Runs
-					if(startSmallRuns != startDefiniteLongRun) {
-						endSmallRuns = startDefiniteLongRun;
-						insertionSort<INT, ELEM>(startSmallRuns, endSmallRuns-startSmallRuns);
-						if(topBytesSize%2) copyBuffer(startSmallRuns, endSmallRuns);
-					}
+		// We're at the end of the list, figure out if the last run
+		// is long or not then process.
+		if(definiteLongRun) {
+			endDefiniteLongRun = source+length;
+                	//process the long run.
+                	const auto oldSource = source;
+                	const auto oldDestination = destination;
+                	const auto oldLength = length;
+                	source = startDefiniteLongRun;
+                	destination = destination + (startDefiniteLongRun-source);
+                	length = endDefiniteLongRun - startDefiniteLongRun;
 
-					definiteLongRun=true;
-					potentialLongRun=false;
-				} else potentialLongRun = true;
-			}
+                	fr(bottomBytes, bottomBytesSize);
+                	if((bottomBytesSize+topBytesSize)%2) copyBuffer(startDefiniteLongRun, endDefiniteLongRun);
+
+                	source = oldSource;
+                	destination = oldDestination;
+                	length = oldLength;
+		} else {
+			endSmallRuns = source+length;
+			insertionSort<INT, ELEM>(startSmallRuns, endSmallRuns-startSmallRuns);
+			if(topBytesSize%2) copyBuffer(startSmallRuns, endSmallRuns);
 		}
 	}
 
-	// We're at the end of the list, figure out if the last run
-	// is long or not then process.
-	if(definiteLongRun) {
-		endDefiniteLongRun = source+length;
-                //process the long run.
-                const auto oldSource = source;
-                const auto oldDestination = destination;
-                const auto oldLength = length;
-                source = startDefiniteLongRun;
-                destination = destination + (startDefiniteLongRun-source);
-                length = endDefiniteLongRun - startDefiniteLongRun;
-
-                fr(bottomBytes, bottomBytesSize);
-                if((bottomBytesSize+topBytesSize)%2) copyBuffer(startDefiniteLongRun, endDefiniteLongRun);
-
-                source = oldSource;
-                destination = oldDestination;
-                length = oldLength;
-	} else {
-		endSmallRuns = source+length;
-		insertionSort<INT, ELEM>(startSmallRuns, endSmallRuns-startSmallRuns);
-		if(topBytesSize%2) copyBuffer(startSmallRuns, endSmallRuns);
+	if((bottomBytesSize+topBytesSize)%2) {
+		copyBuffer(source, source+length);
+		swap(); //So we don't break the delete
 	}
 
-	if((bottomBytesSize+topBytesSize)%2) swap(); //So we don't break the delete
+
+                        #ifdef DEBUG
+                        std::cout << "HERE3! We're done, just cleaning up now." << std::endl;
+			std::cout << "source is: " << source << std::endl;
+			std::cout << "destination is: " << destination << std::endl;
+                        #endif
+
 
 	//We're done! Delete all the stuff we made
-	delete [] destination;
-	delete [] sourceBuckets;
+	//delete [] destination;
+	//delete [] sourceBuckets;
 	delete [] destinationBuckets;
 	delete [] overflowBuckets;
-	free(overflowBuffer);
+	delete [] overflowBuffer;
+	delete [] topBytes;
+	delete [] bottomBytes;
+	delete [] bucketCounts;
+	delete [] overflowCounts;
 }
 
 
@@ -910,6 +1093,16 @@ int main(int argc, char *argv[]) {
 			break;
 		}
 	}
+
+                        #ifdef DEBUG
+			for(int i = 0; i < targetLength; i++) {
+				std::cout << values[i] << " ";
+			}
+			std::cout << std::endl;
+                        #endif
+
+
+	delete [] values;
 
         return 0;
 }
