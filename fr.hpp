@@ -138,16 +138,15 @@ void dfr(ELEM *source, auto length) {
 	//it is to our advantage to under-represent that case with the liveness
 	//check.
 
-	/* Correctly random. Switch back to this when bugs resolved!
+	#ifdef NOTRANDOM
+        livebits |= bitmask^ *(reinterpret_cast<INT*>(source + 1));
+        livebits |= bitmask^ *(reinterpret_cast<INT*>(source + 2));
+        livebits |= bitmask^ *(reinterpret_cast<INT*>(source + 3));
+	#else
 	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
 	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
 	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
-	*/
-
-	// Fixed check to force repeatable bugs
-	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + 1));
-	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + 2));
-	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + 3));
+	#endif
 
 	auto neededBits = ceil(std::log2((float)(length)/(float)(DIVERSION_THRESHOLD))); //ceil(log(1792/14)/log(2)),
 
