@@ -1,3 +1,6 @@
+#ifndef FASTRADIX_HPP
+#define FASTRADIX_HPP
+
 #include <cassert>
 #include <cstring>
 #include <cstdlib>
@@ -25,19 +28,6 @@ typedef unsigned __int8 uint8_t;
 #else
 #include <stdint.h>
 #endif
-
-/*
-	Useful to make randomn test data
-*/
-template<typename UINT>
-void make_random(UINT *data, unsigned N) {
-        UINT max = std::numeric_limits<UINT>::max();
-	std::random_device rd;
-        std::mt19937 generator(rd());
-        std::uniform_int_distribution<UINT> distribution(0,max);
-        for(unsigned i = 0; i<N;i++)data[i]=distribution(generator);
-}
-
 
 template <typename INT, typename ELEM>
 void insertionSort(ELEM *source, const auto &length) {
@@ -642,59 +632,4 @@ void dfr(ELEM *source, auto length) {
 	delete [] bucketCounts;
 	delete [] overflowCounts;
 }
-
-
-template <typename T>
-struct elem {
-        T key;
-        T *val;
-};
-
-
-typedef uint64_t targetType;
-
-int main(int argc, char *argv[]) {
-
-	auto targetLength = 512;
-
-	if(argc >= 2) {
-		targetLength = atoi(argv[1]);
-	}
-
-	targetType* values = new targetType[targetLength];
-
-	if(argc > 2) {
-		std::cout << "Making fixed input of size " << targetLength << " with values: " << std::flush;
-		for(int i = 0; i < targetLength; i++) {
-		  auto val = atoi(argv[i+2]);
-		  std::cout << val << " " << std::flush;
-		  values[i] = val;
-		}
-		std::cout << std::endl;
-	} else {
-		std::cout << "Making random input of size " << targetLength << std::endl;
-		make_random(values, targetLength);
-	}
-
-	dfr<targetType, targetType>(values, targetLength);
-
-	for(int i = 1; i < targetLength; i++) {
-		if(values[i] < values[i-1]) {
-			std::cout << " value " << i << " is out of place." << std::endl;
-			break;
-		}
-	}
-
-                        #ifdef DEBUG
-			for(int i = 0; i < targetLength; i++) {
-				std::cout << values[i] << " ";
-			}
-			std::cout << std::endl;
-                        #endif
-
-
-	delete [] values;
-
-        return 0;
-}
-
+#endif
