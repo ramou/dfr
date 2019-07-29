@@ -92,7 +92,7 @@ void dfr(ELEM *source, auto length) {
 	//Initially these will be the starting positions into the overflow buffer
 	//Once dumped into the overflow buffer, they will then be the ending positions
 	//when dealing out of the overflow buffer
-	ELEM **overflowBuckets = new ELEM*[512]; //Made larger bcause vagrind complained
+	ELEM **overflowBuckets = new ELEM*[512]; //Made bigger to avoid valgrind error :\
 
 	//If we ever actually count elements upon placing (e.g. a last pass), we should
 	//use this before converting it to *buckets*
