@@ -86,7 +86,21 @@ TEST_CASE( "[up8to3] guess 8 live bytes, actually 3, including lowest", "[up8to3
 	uint64_t test[15] = {65536, 1, 1, 4, 5, 6, 7, 8, 512, 512, 11, 12, 13, 4, 4};
 	int n = sizeof(safe)/sizeof(safe[0]); 
 	std::sort(safe, safe+n);
+        #ifdef DEBUG
+	std::cout << "We want to get: ";
+	for(int i = 0; i < 15; i++) std::cout << safe[i] << " ";
+	std::cout << std::endl;
+        #endif
+
 	dfr<uint64_t, uint64_t>(test, 15);
+
+        #ifdef DEBUG
+        std::cout << "We got: ";
+        for(int i = 0; i < 15; i++) std::cout << test[i] << " ";
+        std::cout << std::endl;
+        #endif
+
+
 
 	REQUIRE( theSame(safe, test, 15));
 }
@@ -96,8 +110,27 @@ TEST_CASE( "[up8to2] guess 8 live bytes, actually 2, including lowest", "[up8to2
         uint64_t safe[15] = {513, 1, 1, 4, 5, 6, 7, 8, 512, 512, 11, 12, 13, 4, 4};
         uint64_t test[15] = {513, 1, 1, 4, 5, 6, 7, 8, 512, 512, 11, 12, 13, 4, 4};
         int n = sizeof(safe)/sizeof(safe[0]);
+
+        #ifdef DEBUG
+        std::cout << "We started with: " << std::endl;
+        for(int i = 0; i < 15; i++) std::cout << safe[i] << " ";
+        std::cout << std::endl;
+        #endif
+
         std::sort(safe, safe+n);
+        #ifdef DEBUG
+        std::cout << "We want to get: " << std::endl;
+        for(int i = 0; i < 15; i++) std::cout << safe[i] << " ";
+        std::cout << std::endl;
+        #endif
+
         dfr<uint64_t, uint64_t>(test, 15);
+        #ifdef DEBUG
+        std::cout << "We got: " << std::endl;
+        for(int i = 0; i < 15; i++) std::cout << test[i] << " ";
+        std::cout << std::endl;
+        #endif
+
 
         REQUIRE( theSame(safe, test, 15));
 }

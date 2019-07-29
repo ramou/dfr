@@ -265,6 +265,12 @@ void dfr(ELEM *source, auto length) {
 		}
 	};
 
+	#ifdef DEBUG
+	auto outputDeal = [&destinationBuckets](const auto &targetBucketIndex, const auto &element) {
+		std::cout << (reinterpret_cast<INT>(element)) << " ";
+        };
+	#endif
+
 	auto simpleDeal = [&destinationBuckets](const auto &targetBucketIndex, const auto &element) {
 		auto currentDestination = destinationBuckets[0];
                 *currentDestination=element;
@@ -274,7 +280,7 @@ void dfr(ELEM *source, auto length) {
 	auto dealExact = [&destinationBuckets, &destination](const auto &targetBucketIndex, const auto &element) {
 		auto currentDestination = destinationBuckets[targetBucketIndex];
 		*currentDestination=element;
-		destinationBuckets[targetBucketIndex<<1]++;
+		destinationBuckets[targetBucketIndex]++;
 	};
 
 	auto dealToOverflow = [&overflowBuckets](auto &targetBucketIndex, const auto &element) {
@@ -411,7 +417,6 @@ void dfr(ELEM *source, auto length) {
 			}
 			processOverflow(currentByte);
 			swap();
-
 		//We have to account for the newly generated numBytes being either 0, 1, 2 or 3 (we did one pass, but numbytes still has it... 
 		//our one pass could theoretically have been over dead bits), which means we found enough dead bits to eliminate
 		//passes that would have got us caught up above in the numBytes == 1 or numBytes == 2 section. Sure it's annoying, but actually
@@ -464,9 +469,9 @@ void dfr(ELEM *source, auto length) {
 				swap();
 			} else {	//We did a real pass, it just would have helped to have counted first.
 				countedByte = bytes[1];
-				passOverInputs(source, overflowBuffer, currentByte, noDeal, countForByte);
+				passOverInputs(source, overflowBuffer, countedByte, noDeal, countForByte);
 				convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
-				passOverInputs(source, overflowBuffer, currentByte, dealExact, noStats);
+				passOverInputs(source, overflowBuffer, countedByte, dealExact, noStats);
 				swap();
 			}
 
