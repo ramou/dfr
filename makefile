@@ -8,5 +8,5 @@ tests: buildtest ;
 	./test
 
 debug:
-	c++ -g -std=c++14 unit.cpp -o test
+	c++ -g -std=c++14 -DDEBUG unit.cpp -o test
 	./test $(filter-out $@,$(MAKECMDGOALS))
