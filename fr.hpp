@@ -92,7 +92,7 @@ void dfr(ELEM *source, auto length) {
 	//Initially these will be the starting positions into the overflow buffer
 	//Once dumped into the overflow buffer, they will then be the ending positions
 	//when dealing out of the overflow buffer
-	ELEM **overflowBuckets = new ELEM*[512]; //Made bigger to avoid valgrind error :\
+	ELEM **overflowBuckets = new ELEM*[256]; //Made bigger to avoid valgrind error :\
 
 	//If we ever actually count elements upon placing (e.g. a last pass), we should
 	//use this before converting it to *buckets*
@@ -171,7 +171,6 @@ void dfr(ELEM *source, auto length) {
         auto bottomBytesSize = 0;
 
 	const INT highBitMask = !((allBits-1) > neededBytes);
-        auto currentByte = sizeof(INT)-neededBytes;
         auto overflow = source;
 
 
@@ -257,7 +256,6 @@ void dfr(ELEM *source, auto length) {
 			overflowCounts[targetBucketIndex]++;
 			*overflow = element;
 			overflow++;
-
 			if(overflow == overflowBuffer+(2 * overflowMaxSize)) {
 				overflow = source;
 			}
@@ -305,7 +303,7 @@ void dfr(ELEM *source, auto length) {
 		auto currentBucket = buckets+1;
 		auto previousBucket = buckets+0;
 
-		std::for_each(counts, counts+256, [&currentBucket, &previousBucket](auto &count) {
+		std::for_each(counts, counts+255, [&currentBucket, &previousBucket](auto &count) {
 			*currentBucket = *previousBucket + count;
 			currentBucket++;
 			previousBucket++;
@@ -344,6 +342,7 @@ void dfr(ELEM *source, auto length) {
 			if(overflowMaxSize != 0){ //If we processed overflow without ever using overflow we skip this stuff
 				convertCountsToContiguousBuckets(overflowCounts, overflowBuckets, overflowBuffer);
 				passOverInput(overflowBuffer+overflowMaxSize,overflow, currentByte, dealToOverflow, noStats);
+				overflow = overflowBuffer+overflowMaxSize;
 			}
 		}
 	};
@@ -370,35 +369,37 @@ void dfr(ELEM *source, auto length) {
 
 	bool hasByteLists = false;
  	auto fr = [&](const auto &bytes, const auto &numBytes) {
-
-		const auto thresholdByte = sizeof(INT)-neededBytes;
+		auto currentByte = hasByteLists?bytes[0]:sizeof(INT)-neededBytes;
+		if(hasByteLists) neededBytes = numBytes;
+		bool setByteListHere = false;
 
 	        if(neededBytes == 1) { // Just do a single count pass first and in a very un-fast-radix-way deal exactly into destination
 			countedByte=currentByte;
-			passOverInput(source, source+length, thresholdByte, noDeal, countForByte);
+			passOverInput(source, source+length, currentByte, noDeal, countForByte);
 			convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
 
 			if(hasByteLists) {
-				passOverInput(source, source+length, thresholdByte, dealExact, noStats);
+				passOverInput(source, source+length, currentByte, dealExact, noStats);
 			} else {
-				passOverInput(source, source+length, thresholdByte, dealExact, gatherLiveBits);
-				buildByteLists(thresholdByte);
+				passOverInput(source, source+length, currentByte, dealExact, gatherLiveBits);
+				buildByteLists(currentByte);
 				hasByteLists=true;
 			}
+			swap();
 	        } else if(neededBytes == 2) {   // We need a pass that does count capturing, then deals back in place.
-										// We ignore when highest byte is dead; too annoying to check for
+						// We ignore when highest byte is dead; too annoying to check for
 			countedByte=currentByte+1;
 			doEstimates();
-			passOverInput(source, source+length, thresholdByte, dealWithOverflow, countForByte);
-			processOverflow(thresholdByte);
+			passOverInput(source, source+length, currentByte, dealWithOverflow, countForByte);
+			processOverflow(currentByte);
 			swap();
 			convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
 
 			if(hasByteLists) {
-				passOverInputs(source, overflowBuffer, thresholdByte-1, dealExact, noStats);
+				passOverInputs(source, overflowBuffer, countedByte, dealExact, noStats);
 			} else {
-				passOverInputs(source, overflowBuffer, thresholdByte-1, dealExact, gatherLiveBits);
-				buildByteLists(thresholdByte);
+				passOverInputs(source, overflowBuffer, countedByte, dealExact, gatherLiveBits);
+				buildByteLists(currentByte);
 				hasByteLists=true;
 			}
 			swap();
@@ -406,13 +407,12 @@ void dfr(ELEM *source, auto length) {
 			//Do a first pass
 			doEstimates();
 			if(hasByteLists) {
-					currentByte = thresholdByte;
 					passOverInput(source, source+length, currentByte, dealWithOverflow, noStats);
 			} else {
-					currentByte = bytes[0];
 					passOverInput(source, source+length, currentByte, dealWithOverflow, gatherLiveBits);
-					buildByteLists(thresholdByte);
+					buildByteLists(currentByte);
 					hasByteLists=true;
+					setByteListHere=true;
 			}
 			processOverflow(currentByte);
 			swap();
@@ -421,60 +421,33 @@ void dfr(ELEM *source, auto length) {
 		//passes that would have got us caught up above in the numBytes == 1 or numBytes == 2 section. Sure it's annoying, but actually
 		//doing the deadbit passes would be more annoying, so rejoice!
 
-		if(topBytesSize == 0) { //We did a pass with overflow, but we shouldn't have done any passes.
-			destinationBuckets[0] = destination;
+		if(setByteListHere && currentByte != bytes[0]) { //We did a pass that wasn't needed. Reverse and recurse
+			destinationBuckets[0] = destination; //simpleDeal needs this
 			passOverInputs(source, overflowBuffer, currentByte, simpleDeal, noStats);
 			swap();
-		} else if (topBytesSize == 1) {	//We did a pass with overflow but we were only supposed to do one pass anyway
-							// Since we didn't count we need to fix that
-							// Further, if that one pass was the lowest-order bit, we may have mistakenly
-							// Done a dead pass and need to account for that
+			return true; //Tell the caller to re-call fr now that we're "fixed" things.
+		}
 
-			if(currentByte != bytes[0]) {//This means currentByte==0, otherwise it wouldn't have been in the initial 
-							// bytes/threshold byte. basically did a bad pass and just need to swap back
-							// The good news is that we shouldn't have done that pass so we just need a
-							// simple deal. Since this simple deal gets enough info to fix stuff, let's
-							// also do the deal we should have done.
-				destinationBuckets[0] = destination;
-				countedByte = bytes[0];
-	                        passOverInputs(source, overflowBuffer, currentByte, simpleDeal, countForByte);
-        	                swap();
-				convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
-				passOverInput(source, source+length, bytes[0], dealExact, noStats);
-				swap();
-			} else {			//Ok, we did a pass, it was needed, but we should have made it an
-							// exact pass. We have to fix that here.
+		if (numBytes == 1) {	//We did a pass with overflow but we were only supposed to do one pass anyway
+						// Since we didn't count we need to fix that
+				//Ok, we did a pass, it was needed, but we should have made it an
+				// exact pass. We have to fix that here.
+			destinationBuckets[0] = destination; //simpleDeal needs this
+			passOverInputs(source, overflowBuffer, currentByte, simpleDeal, noStats);
+			swap();
+			std::memcpy(destination, source, length*sizeof(ELEM));
+			swap();
 
-				destinationBuckets[0] = destination;
-				passOverInputs(source, overflowBuffer, currentByte, simpleDeal, noStats);
-				swap();
-				std::memcpy(destination, source, length*sizeof(ELEM));
-				swap();
-			}
-
-		} else if (numBytes == 2) {	//We did one of two passes. If it was the lowest order pass it may
-							// have been a dead pass.
-			if(currentByte != bytes[0]) {//We did a useless pass and have to undo that.
-				destinationBuckets[0] = destination;
-				passOverInputs(source, overflowBuffer, currentByte, simpleDeal, noStats);
-				swap();
-				doEstimates();
-				countedByte = bytes[1];
-				passOverInput(source, source+length, thresholdByte, dealWithOverflow, countForByte);
-	                        processOverflow(thresholdByte);
-        	                swap();
-                                convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
-				passOverInputs(source, overflowBuffer, bytes[1], dealExact, noStats);
-				swap();
-			} else {	//We did a real pass, it just would have helped to have counted first.
-				countedByte = bytes[1];
-				passOverInputs(source, overflowBuffer, countedByte, noDeal, countForByte);
-				convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
-				passOverInputs(source, overflowBuffer, countedByte, dealExact, noStats);
-				swap();
-			}
+		} else if (numBytes == 2) {	//We did one of two passes. 
+			//We did a real pass, it just would have helped to have counted first.
+			countedByte = bytes[1];
+			passOverInputs(source, overflowBuffer, countedByte, noDeal, countForByte);
+			convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
+			passOverInputs(source, overflowBuffer, countedByte, dealExact, noStats);
+			swap();
 
 		} else {
+
 				for(int i = 1; i < (numBytes - 2); i++) {
 						doEstimates();
 						passOverInputs(source, overflowBuffer, bytes[i], dealWithOverflow, noStats);
@@ -482,20 +455,24 @@ void dfr(ELEM *source, auto length) {
 						swap();
 				}
 
+
 				//Do last two passes
 				countedByte=bytes[numBytes-1];
 				doEstimates();
 				passOverInputs(source, overflowBuffer, bytes[numBytes-2], dealWithOverflow, countForByte);
 				processOverflow(bytes[numBytes-2]);
-				swap();
 
+				swap();
 				convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
 
 				//Deal last pass in top bytes
 				passOverInputs(source, overflowBuffer, countedByte, dealExact, noStats);
+
 				swap();
 			}
 		}
+
+		return false;
 	};
 
 
@@ -503,7 +480,7 @@ void dfr(ELEM *source, auto length) {
 	// Process  Top Bytes
 	//
 
-	fr(topBytes, topBytesSize);
+	if(fr(topBytes, topBytesSize)) fr(topBytes, topBytesSize);
 
 	if(bottomBytesSize > 0) {
 

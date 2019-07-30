@@ -5,10 +5,10 @@ default: ;
 
 valgrind:
 	@if [ -n "$(shell which valgrind)" ]; then \
-	echo "c++ -o3 -std=c++14 -DNOTRANDOM perform.cpp -o perform" ; \
-	c++ -o3 -std=c++14 -DNOTRANDOM unit.cpp -o test ; \
-	echo "valgrind --error-exitcode=2 -q --leak-check=yes ./test" ; \
-	if ! valgrind --error-exitcode=2 -q --leak-check=yes ./test ; then \
+	echo "c++ -g -std=c++14 -DNOTRANDOM unit.cpp -o test" ; \
+	c++ -g -std=c++14 -DNOTRANDOM unit.cpp -o test ; \
+	echo "valgrind --error-exitcode=2 -q --leak-check=yes ./test $(filter-out $@,$(MAKECMDGOALS))" ; \
+	if ! valgrind --error-exitcode=2 -q --leak-check=yes ./test $(filter-out $@,$(MAKECMDGOALS)) ; then \
 	exit 2; \
 	fi; \
 	else \
@@ -17,11 +17,12 @@ valgrind:
 	fi
 
 buildtest:
-	c++ -o3 -std=c++14 -DNOTRANDOM unit.cpp -o test
+	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM unit.cpp -o test
+	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM perform.cpp -o perform
 
 tests: buildtest ;
 	./test
 
 debug:
 	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM unit.cpp -o test
-	./test $(filter-out $@,$(MAKECMDGOALS))
+	./test -s $(filter-out $@,$(MAKECMDGOALS))
