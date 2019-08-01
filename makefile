@@ -3,11 +3,11 @@ MISSING_VALGRIND="No valgrind in $(PATH), consider doing apt-get install valgrin
 default: ;
 	c++ -o3 -std=c++14 perform.cpp -o perform
 
-timing:
+timing: ;
 	c++ -o3 -DTIMINGS -std=c++14 perform.cpp -o perform
 	./perform $(filter-out $@,$(MAKECMDGOALS))
 
-valgrind:
+valgrind: ;
 	@if [ -n "$(shell which valgrind)" ]; then \
 	echo "c++ -g -std=c++14 -DNOTRANDOM -DTEST_THRESHOLD=4 unit.cpp -o test" ; \
 	c++ -g -std=c++14 -DNOTRANDOM -DTEST_THRESHOLD=4 unit.cpp -o test ; \
@@ -20,13 +20,13 @@ valgrind:
 	exit 1; \
 	fi
 
-buildtest:
+buildtest: ;
 	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM -DTEST_THRESHOLD=4 unit.cpp -o test
 	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM -DTEST_THRESHOLD=4 perform.cpp -o perform
 
 tests: buildtest ;
 	./test
 
-debug:
+debug: ;
 	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM -DTEST_THRESHOLD=4 unit.cpp -o test
 	./test -s $(filter-out $@,$(MAKECMDGOALS))

@@ -29,24 +29,6 @@ typedef unsigned __int8 uint8_t;
 #include <stdint.h>
 #endif
 
-template <typename INT, typename ELEM>
-void insertionSort(ELEM *source, const auto &length) {
-	ELEM buf;
-	auto cursor=0;
-	INT val;
-	for(auto i = 1; i < length; i++) {
-                buf = source[cursor = i];
-		val = *(reinterpret_cast<INT*>(&buf));
-                while(cursor > 0 &&
-		      val < *(reinterpret_cast<INT*>(source + (cursor-1)))
-		     ) {
-                        source[cursor]=source[cursor-1];
-                        cursor--;
-                }
-                source[cursor]=buf;
-        }
-}
-
 //This should be ~14 lowering while I dev
 
 #ifdef TEST_THRESHOLD
@@ -71,8 +53,25 @@ void dfr(ELEM *source, auto length) {
 		1) Diverting on small lengths
 	*/
 
+	auto insertionSort = [](ELEM *source, const auto &length) {
+        	ELEM buf;
+        	INT val;
+        	for(unsigned i = 1; i < length; i++) {
+			unsigned cursor = i;
+                	buf = source[cursor];
+                	val = *(reinterpret_cast<INT*>(source+(cursor=i)));
+                	while(cursor > 0 &&
+                      	val < *(reinterpret_cast<INT*>(source + (cursor-1)))
+                     	) {
+                        	source[cursor]=source[cursor-1];
+                        	cursor--;
+                	}
+                	source[cursor]=buf;
+        	}
+	};
+
 	if(length <= DIVERSION_THRESHOLD) {
-		insertionSort<INT, ELEM>(source, length);
+		insertionSort(source, length);
 		return;
 	}
 
@@ -169,11 +168,11 @@ void dfr(ELEM *source, auto length) {
 	}
 
 	int countedByte;
-	const auto topBytes = new int[sizeof(INT)];
-	std::memset(topBytes, 0, sizeof(INT)*sizeof(int));
+	const auto topBytes = new uint8_t[sizeof(INT)];
+	std::memset(topBytes, 0, sizeof(INT)*sizeof(uint8_t));
 	auto topBytesSize = 0;
-	const auto bottomBytes = new int[sizeof(INT)];
-	std::memset(bottomBytes, 0, sizeof(INT)*sizeof(int));
+	const auto bottomBytes = new uint8_t[sizeof(INT)];
+	std::memset(bottomBytes, 0, sizeof(INT)*sizeof(uint8_t));
         auto bottomBytesSize = 0;
 
 	const INT myi = 1;
@@ -197,7 +196,6 @@ void dfr(ELEM *source, auto length) {
 		const auto bucketGuess = length>>8;
 		const auto remainder = length-(bucketGuess<<8);
 		auto d = destination;
-
 		auto buildBucketEstimates = [&destinationBuckets, &d] (const auto &bucketSize, const auto &start, const auto &end, const auto &destinationBuckets){
 			for(auto i = start; i < end; i++) {
 				destinationBuckets[i << 1]       = d;//start
@@ -227,33 +225,34 @@ void dfr(ELEM *source, auto length) {
 		std::swap(sourceBuckets, destinationBuckets);
 	};
 
-	auto passOverInput = [](const auto &start, const auto &end, const auto &currentByte, const auto &deal, const auto &gatherStats) {
-		std::for_each(start, end, [&](auto &element){
-			auto targetBucketIndex = (((reinterpret_cast<INT>(element))>>(currentByte*8)) & 255);
-			deal(targetBucketIndex, element);
-			gatherStats(targetBucketIndex, element);
-		});
+	const auto passOverInput = [](ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &deal, const auto &gatherStats) {
+		if(start == end) return;
+		const ELEM* element = start;
+		const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte; 
+		const unsigned len = (end-start);
+
+		for(unsigned i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
+			deal(*target, *element);
+			gatherStats(*target, *element);
+		}
 	};
 
-	auto passOverInputs = [&](const auto thisSource, const auto thisBuffer, const auto &currentByte, const auto &deal, const auto &gatherStats) {
+	const auto passOverInputs = [&](ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &deal, const auto &gatherStats) {
 			auto startSourceBucket = thisSource;
 			ELEM* endSourceBucket;
 			auto startOverflowBucket = thisBuffer;
 			ELEM* endOverflowBucket;
 
-			for(int i = 0; i < 256; i++) {
-					endSourceBucket = sourceBuckets[i<<1];
-					endOverflowBucket = overflowBuckets[i];
-
-					passOverInput(startSourceBucket, endSourceBucket, currentByte, deal, gatherStats);
-					passOverInput(startOverflowBucket, endOverflowBucket, currentByte, deal, gatherStats);
+			for(unsigned i = 0; i < 256; i++) {
+					passOverInput(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, deal, gatherStats);
+					passOverInput(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, deal, gatherStats);
 
 					startSourceBucket=sourceBuckets[(i<<1)+1];
 					startOverflowBucket = endOverflowBucket;
 			}
 	};
 
-	auto dealWithOverflow = [&](const auto &targetBucketIndex, const auto &element) {
+	const auto dealWithOverflow = [&](const auto &targetBucketIndex, const auto &element) {
 		auto currentDestination = destinationBuckets[targetBucketIndex << 1];
 		if(currentDestination < destinationBuckets[(targetBucketIndex << 1) + 1]) {
 			*currentDestination = element;
@@ -269,42 +268,42 @@ void dfr(ELEM *source, auto length) {
 	};
 
 	#ifdef DEBUG
-	auto outputDeal = [&destinationBuckets](const auto &targetBucketIndex, const auto &element) {
+	const auto outputDeal = [&destinationBuckets](const auto &targetBucketIndex, const auto &element) {
 		std::cout << (reinterpret_cast<INT>(element)) << " ";
         };
 	#endif
 
-	auto simpleDeal = [&destinationBuckets](const auto &targetBucketIndex, const auto &element) {
+	const auto simpleDeal = [&destinationBuckets](const auto &targetBucketIndex, const auto &element) {
 		auto currentDestination = destinationBuckets[0];
                 *currentDestination=element;
                 destinationBuckets[0]++;
 	};
 
-	auto dealExact = [&destinationBuckets, &destination](const auto &targetBucketIndex, const auto &element) {
+	const auto dealExact = [&destinationBuckets, &destination](const auto &targetBucketIndex, const auto &element) {
 		auto currentDestination = destinationBuckets[targetBucketIndex];
 		*currentDestination=element;
 		destinationBuckets[targetBucketIndex]++;
 	};
 
-	auto dealToOverflow = [&overflowBuckets](auto &targetBucketIndex, const auto &element) {
+	const auto dealToOverflow = [&overflowBuckets](auto &targetBucketIndex, const auto &element) {
 		auto currentDestination = overflowBuckets[targetBucketIndex];
 		*currentDestination=element;
 		overflowBuckets[targetBucketIndex]++;
 	};
 
-	auto noDeal = [](const auto &targetBucketIndex, const auto &element){};
-	auto noStats = [](const auto &targetBucketIndex, const auto &element){};
+	const auto noDeal = [](const auto &targetBucketIndex, const auto &element){};
+	const auto noStats = [](const auto &targetBucketIndex, const auto &element){};
 
-	auto gatherLiveBits = [&livebits, &bitmask](const auto &targetBucketIndex, const auto &element){
+	const auto gatherLiveBits = [&livebits, &bitmask](const auto &targetBucketIndex, const auto &element){
 		livebits |= bitmask ^ reinterpret_cast<INT>(element);
 	};
 
-	auto countForByte = [&] (const auto &targetBucketIndex, const auto &element) {
+	const auto countForByte = [&] (const auto &targetBucketIndex, const auto &element) {
 		auto countedBucketIndex = ((reinterpret_cast<INT>(element))>>(countedByte*8)) & 255;
 		bucketCounts[countedBucketIndex]++;
 	};
 
-	auto convertCountsToContiguousBuckets = [&destination](const auto &counts, const auto &buckets, const auto &buffer) {
+	const auto convertCountsToContiguousBuckets = [&destination](const auto &counts, const auto &buckets, const auto &buffer) {
 		*buckets=buffer;
 		auto currentBucket = buckets+1;
 		auto previousBucket = buckets+0;
@@ -317,7 +316,7 @@ void dfr(ELEM *source, auto length) {
 		});
 	};
 
-	auto processOverflow = [&](const auto &currentByte){
+	const auto processOverflow = [&](const auto &currentByte){
 		//Check if overflow is in source or if it still fits within existing buffer.
 		if((source <= overflow) && ( overflow < (source+length))) {
 
@@ -422,6 +421,10 @@ void dfr(ELEM *source, auto length) {
 					buildByteLists(currentByte);
 					hasByteLists=true;
 					setByteListHere=true;
+#ifdef DEBUG
+std::cout << "Top Bytes: " << topBytesSize << " Bottom Bytes: " << bottomBytesSize << std::endl;
+#endif
+
 			}
 			processOverflow(currentByte);
 			swap();
@@ -489,7 +492,18 @@ void dfr(ELEM *source, auto length) {
 	// Process  Top Bytes
 	//
 
+#ifdef TIMINGS
+        std::chrono::high_resolution_clock::time_point end;
+        std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+#endif
+
+
 	if(fr(topBytes, topBytesSize)) fr(topBytes, topBytesSize);
+#ifdef TIMINGS
+end = std::chrono::high_resolution_clock::now();
+std::cerr << "Time Top: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+start = std::chrono::high_resolution_clock::now();
+#endif
 
 	if(bottomBytesSize > 0) {
 
@@ -535,7 +549,6 @@ void dfr(ELEM *source, auto length) {
 					if(overflowMaxSize>0) overflow = overflowBuffer + overflowMaxSize;
 					else overflow = source;
 
-
 					fr(bottomBytes, bottomBytesSize);
 					if(bottomBytesSize%2) {
 						std::memcpy(destination, source, length*sizeof(ELEM));
@@ -562,7 +575,7 @@ void dfr(ELEM *source, auto length) {
 						//Insertion Sort Long Runs
 						if(startSmallRuns != startDefiniteLongRun) {
 							endSmallRuns = startDefiniteLongRun;
-							insertionSort<INT, ELEM>(startSmallRuns, endSmallRuns-startSmallRuns);
+							insertionSort(startSmallRuns, endSmallRuns-startSmallRuns);
 						}
 
 						definiteLongRun=true;
@@ -597,7 +610,7 @@ void dfr(ELEM *source, auto length) {
                 	length = oldLength;
 		} else {
 			endSmallRuns = source+length;
-			insertionSort<INT, ELEM>(startSmallRuns, endSmallRuns-startSmallRuns);
+			insertionSort(startSmallRuns, endSmallRuns-startSmallRuns);
 		}
 	}
 
@@ -605,6 +618,11 @@ void dfr(ELEM *source, auto length) {
 		std::memcpy(destination, source, sizeof(ELEM)*length);
 		swap();
 	}
+
+#ifdef TIMINGS
+end = std::chrono::high_resolution_clock::now();
+std::cerr << "Time Bottom: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+#endif
 
 	//We're done! Delete all the stuff we made
 	delete [] destination;
