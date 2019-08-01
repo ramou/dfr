@@ -48,7 +48,12 @@ void insertionSort(ELEM *source, const auto &length) {
 }
 
 //This should be ~14 lowering while I dev
-const int DIVERSION_THRESHOLD = 4;
+
+#ifdef TEST_THRESHOLD
+const int DIVERSION_THRESHOLD=TEST_THRESHOLD;
+#else
+const int DIVERSION_THRESHOLD = 10;
+#endif
 
 const int SMALL_SAMPLE = 26;
 const int LARGE_SAMPLE = 1024;	 // 1024 because I like large multiple of 256
@@ -146,6 +151,7 @@ void dfr(ELEM *source, auto length) {
 	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
 	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
 	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
+	livebits |= bitmask^ *(reinterpret_cast<INT*>(source + dist(gen)));
 	#endif
 
 	auto neededBits = ceil(std::log2((float)(length)/(float)(DIVERSION_THRESHOLD))); //ceil(log(1792/14)/log(2)),
@@ -170,9 +176,9 @@ void dfr(ELEM *source, auto length) {
 	std::memset(bottomBytes, 0, sizeof(INT)*sizeof(int));
         auto bottomBytesSize = 0;
 
-	const INT highBitMask = !((allBits-1) > neededBytes);
+	const INT myi = 1;
+	const INT highBitMask = (((((myi << (allBits-1))-1)<<1)+1)<<((sizeof(INT)-neededBytes)*8) );
         auto overflow = source;
-
 
 	/**
 		4) GETTING A SAMPLE DISTRIBUTION
@@ -314,6 +320,7 @@ void dfr(ELEM *source, auto length) {
 	auto processOverflow = [&](const auto &currentByte){
 		//Check if overflow is in source or if it still fits within existing buffer.
 		if((source <= overflow) && ( overflow < (source+length))) {
+
 			//We used up the old overflow so we need a bigger overflow.
 
 			//Make a new buffer
@@ -373,6 +380,8 @@ void dfr(ELEM *source, auto length) {
 		if(hasByteLists) neededBytes = numBytes;
 		bool setByteListHere = false;
 
+	//Should we assign overflow's starting position here? Is the shrinking of source the cause of this pain or is it always pointing to a suitable buffer?
+
 	        if(neededBytes == 1) { // Just do a single count pass first and in a very un-fast-radix-way deal exactly into destination
 			countedByte=currentByte;
 			passOverInput(source, source+length, currentByte, noDeal, countForByte);
@@ -416,6 +425,7 @@ void dfr(ELEM *source, auto length) {
 			}
 			processOverflow(currentByte);
 			swap();
+
 		//We have to account for the newly generated numBytes being either 0, 1, 2 or 3 (we did one pass, but numbytes still has it... 
 		//our one pass could theoretically have been over dead bits), which means we found enough dead bits to eliminate
 		//passes that would have got us caught up above in the numBytes == 1 or numBytes == 2 section. Sure it's annoying, but actually
@@ -445,7 +455,6 @@ void dfr(ELEM *source, auto length) {
 			convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
 			passOverInputs(source, overflowBuffer, countedByte, dealExact, noStats);
 			swap();
-
 		} else {
 
 				for(int i = 1; i < (numBytes - 2); i++) {
@@ -508,9 +517,9 @@ void dfr(ELEM *source, auto length) {
 
 		startSmallRuns = source;
 
-		for(ELEM* element = source+1; element < source+length; element += (DIVERSION_THRESHOLD>1)) {
+		for(ELEM* element = source+1; element < source+length; element += (DIVERSION_THRESHOLD>>1)) {
 			const INT newBits = getHighBits(*element);
-			if(currentBits ^ highBitMask) { //Things changed
+			if(currentBits ^ newBits) { //Things changed
 				if(definiteLongRun) { // A long run has ended
 					//walk back by one to find the exact end of the long run
 					endDefiniteLongRun=element;
@@ -523,12 +532,13 @@ void dfr(ELEM *source, auto length) {
 					source = startDefiniteLongRun;
 					destination = destination + (startDefiniteLongRun-source);
 					length = endDefiniteLongRun - startDefiniteLongRun;
+					if(overflowMaxSize>0) overflow = overflowBuffer + overflowMaxSize;
+					else overflow = source;
 
 
 					fr(bottomBytes, bottomBytesSize);
-					if((bottomBytesSize+topBytesSize)%2) {
-						const int offset = startDefiniteLongRun-source;
-						std::memcpy(destination+offset, source+offset, (endDefiniteLongRun-startDefiniteLongRun)*sizeof(ELEM));
+					if(bottomBytesSize%2) {
+						std::memcpy(destination, source, length*sizeof(ELEM));
 					}
 
 					source = oldSource;
@@ -549,21 +559,18 @@ void dfr(ELEM *source, auto length) {
 						//Also run the previous short runs
 						startDefiniteLongRun=element;
 						while((startDefiniteLongRun > source) && !(getHighBits(*(startDefiniteLongRun-1)) ^ currentBits)) startDefiniteLongRun--;
-
 						//Insertion Sort Long Runs
 						if(startSmallRuns != startDefiniteLongRun) {
 							endSmallRuns = startDefiniteLongRun;
 							insertionSort<INT, ELEM>(startSmallRuns, endSmallRuns-startSmallRuns);
-							if(topBytesSize%2) {
-		                                                const int offset = startSmallRuns-source;
-                		                                std::memcpy(destination+offset, source+offset, (endSmallRuns-startSmallRuns)*sizeof(ELEM));
-							}
 						}
 
 						definiteLongRun=true;
 						potentialLongRun=false;
-					} else potentialLongRun = true;
-				}
+					} else {
+						potentialLongRun = true;
+					}
+				} 
 			}
 		}
 
@@ -578,11 +585,12 @@ void dfr(ELEM *source, auto length) {
                 	source = startDefiniteLongRun;
                 	destination = destination + (startDefiniteLongRun-source);
                 	length = endDefiniteLongRun - startDefiniteLongRun;
+			if(overflowMaxSize>0) overflow = overflowBuffer + overflowMaxSize;
+			else overflow = source;
 
                 	fr(bottomBytes, bottomBytesSize);
-                	if((bottomBytesSize+topBytesSize)%2) {
-				const int offset = startDefiniteLongRun-source;
-				std::memcpy(destination+offset, source+offset, (endDefiniteLongRun-startDefiniteLongRun)*sizeof(ELEM));
+                	if((bottomBytesSize)%2) {
+				std::memcpy(destination, source, length*sizeof(ELEM));
 			}
                 	source = oldSource;
                 	destination = oldDestination;
@@ -590,14 +598,10 @@ void dfr(ELEM *source, auto length) {
 		} else {
 			endSmallRuns = source+length;
 			insertionSort<INT, ELEM>(startSmallRuns, endSmallRuns-startSmallRuns);
-			if(topBytesSize%2) {
-				const int offset = startSmallRuns-source;
-				std::memcpy(destination+offset, source+offset, (endSmallRuns-startSmallRuns)*sizeof(ELEM));
-			}
 		}
 	}
 
-	if((bottomBytesSize+topBytesSize)%2) {
+	if(topBytesSize%2) {
 		std::memcpy(destination, source, sizeof(ELEM)*length);
 		swap();
 	}

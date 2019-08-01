@@ -3,10 +3,14 @@ MISSING_VALGRIND="No valgrind in $(PATH), consider doing apt-get install valgrin
 default: ;
 	c++ -o3 -std=c++14 perform.cpp -o perform
 
+timing:
+	c++ -o3 -DTIMINGS -std=c++14 perform.cpp -o perform
+	./perform $(filter-out $@,$(MAKECMDGOALS))
+
 valgrind:
 	@if [ -n "$(shell which valgrind)" ]; then \
-	echo "c++ -g -std=c++14 -DNOTRANDOM unit.cpp -o test" ; \
-	c++ -g -std=c++14 -DNOTRANDOM unit.cpp -o test ; \
+	echo "c++ -g -std=c++14 -DNOTRANDOM -DTEST_THRESHOLD=4 unit.cpp -o test" ; \
+	c++ -g -std=c++14 -DNOTRANDOM -DTEST_THRESHOLD=4 unit.cpp -o test ; \
 	echo "valgrind --error-exitcode=2 -q --leak-check=yes ./test $(filter-out $@,$(MAKECMDGOALS))" ; \
 	if ! valgrind --error-exitcode=2 -q --leak-check=yes ./test $(filter-out $@,$(MAKECMDGOALS)) ; then \
 	exit 2; \
@@ -17,12 +21,12 @@ valgrind:
 	fi
 
 buildtest:
-	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM unit.cpp -o test
-	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM perform.cpp -o perform
+	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM -DTEST_THRESHOLD=4 unit.cpp -o test
+	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM -DTEST_THRESHOLD=4 perform.cpp -o perform
 
 tests: buildtest ;
 	./test
 
 debug:
-	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM unit.cpp -o test
+	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM -DTEST_THRESHOLD=4 unit.cpp -o test
 	./test -s $(filter-out $@,$(MAKECMDGOALS))

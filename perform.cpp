@@ -1,4 +1,5 @@
 #include <bits/stdc++.h> 
+#include <chrono>
 #include "fr.hpp"
 
 bool theSame(const auto &start1, const auto &start2, const auto &length);
@@ -55,13 +56,28 @@ int main(int argc, char *argv[]) {
                 std::cout << "Making random input of size " << targetLength << std::endl;
 		#endif
                 make_random(values, targetLength);
+#ifdef TIMINGS
+std::cout << "Random values made" << std::endl;
+#endif
+
         }
 
 	for(int i = 0; i < targetLength; i++) {
 		safe[i] = values[i];
 	}
 
+#ifdef TIMINGS
+        std::chrono::high_resolution_clock::time_point end;
+        std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+#endif
+
         dfr<targetType, targetType>(values, targetLength);
+
+#ifdef TIMINGS
+end = std::chrono::high_resolution_clock::now();
+std::cerr << "Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+#endif
+
 	std::sort(safe, safe+targetLength);
 
 	if(!theSame(safe, values, targetLength)) {
