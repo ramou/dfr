@@ -342,6 +342,36 @@ void dfr(ELEM *source, auto length) {
                         }
         };
 
+        const auto passOverInputDealExact =
+                []
+                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &destinationBuckets) {
+                if(start == end) return;
+                const ELEM* element = start;
+                const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
+                const unsigned len = (end-start);
+
+                for(unsigned i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
+			*((*(destinationBuckets + (*target)))++) = *element;
+                }
+        };
+
+        const auto passOverInputsDealExact =
+                [&sourceBuckets, &overflowBuckets, &passOverInputDealExact]
+                (ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &destinationBuckets) {
+                        auto startSourceBucket = thisSource;
+                        ELEM* endSourceBucket;
+                        auto startOverflowBucket = thisBuffer;
+                        ELEM* endOverflowBucket;
+
+                        for(unsigned i = 0; i < 256; i++) {
+                                        passOverInputDealExact(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, destinationBuckets);
+                                        passOverInputDealExact(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, destinationBuckets);
+
+                                        startSourceBucket=sourceBuckets[(i<<1)+1];
+                                        startOverflowBucket = endOverflowBucket;
+                        }
+        };
+
 
 	const auto passOverInputs = [&](ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &deal, const auto &gatherStats) {
 			auto startSourceBucket = thisSource;
@@ -601,7 +631,6 @@ std::cerr << "Middle Pass Time: " << std::chrono::duration_cast<std::chrono::mic
 
 				countedByte=bytes[numBytes-1];
 				doEstimates();
-				//passOverInputs(source, overflowBuffer, bytes[numBytes-2], dealWithOverflow, countForByte);
 				passOverInputsDealWithOverflowAndCounting(source, overflowBuffer, bytes[numBytes-2], destinationBuckets, bytes[numBytes-1]);
 				processOverflow(bytes[numBytes-2]);
 				swap();
@@ -615,7 +644,7 @@ start = std::chrono::high_resolution_clock::now();
 
 
 				//Deal last pass in top bytes
-				passOverInputs(source, overflowBuffer, countedByte, dealExact, noStats);
+				passOverInputsDealExact(source, overflowBuffer, bytes[numBytes-1], destinationBuckets);
 				swap();
 #ifdef TIMINGS
 end = std::chrono::high_resolution_clock::now();
