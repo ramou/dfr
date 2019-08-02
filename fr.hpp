@@ -239,14 +239,14 @@ void dfr(ELEM *source, auto length) {
 
         const auto passOverInputDealWithOverflowAndGatherLiveBits = 
 		[&source, &overflow, &overflowCounts, &overflowBuffer, &overflowMaxSize, &livebits, &bitmask]
-		(ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &destinationBuckets) {
+		(ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &targetBuckets) {
                 if(start == end) return;
                 const ELEM* element = start;
                 const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
                 const unsigned len = (end-start);
 
                 for(unsigned i = 0; i < len; ++i, livebits |= bitmask ^ reinterpret_cast<INT>(*(element++)), target+=sizeof(ELEM)) {
-			ELEM **currentDestination = destinationBuckets + ((*target) << 1);
+			ELEM **currentDestination = targetBuckets + ((*target) << 1);
 			if(*currentDestination < *(currentDestination+1)) {
 				*((*currentDestination)++) = *element;
  			} else {
@@ -262,14 +262,14 @@ void dfr(ELEM *source, auto length) {
 
         const auto passOverInputDealWithOverflow =
                 [&source, &overflow, &overflowCounts, &overflowBuffer, &overflowMaxSize]
-                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &destinationBuckets) {
+                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &targetBuckets) {
                 if(start == end) return;
                 const ELEM* element = start;
                 const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
                 const unsigned len = (end-start);
 
                 for(unsigned i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
-                        ELEM **currentDestination = destinationBuckets + ((*target) << 1);
+                        ELEM **currentDestination = targetBuckets + ((*target) << 1);
                         if(*currentDestination < *(currentDestination+1)) {
                                 *((*currentDestination)++) = *element;
                         } else {
@@ -285,15 +285,15 @@ void dfr(ELEM *source, auto length) {
 
         const auto passOverInputsDealWithOverflow = 
 		[&sourceBuckets, &overflowBuckets, &passOverInputDealWithOverflow]
-		(ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &destinationBuckets) {
+		(ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &targetBuckets) {
                         auto startSourceBucket = thisSource;
                         ELEM* endSourceBucket;
                         auto startOverflowBucket = thisBuffer;
                         ELEM* endOverflowBucket;
 
                         for(unsigned i = 0; i < 256; i++) {
-                                        passOverInputDealWithOverflow(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, destinationBuckets);
-                                        passOverInputDealWithOverflow(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, destinationBuckets);
+                                        passOverInputDealWithOverflow(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, targetBuckets);
+                                        passOverInputDealWithOverflow(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, targetBuckets);
 
                                         startSourceBucket=sourceBuckets[(i<<1)+1];
                                         startOverflowBucket = endOverflowBucket;
@@ -302,7 +302,7 @@ void dfr(ELEM *source, auto length) {
 
         const auto passOverInputDealWithOverflowAndCounting =
                 [&source, &overflow, &overflowCounts, &overflowBuffer, &overflowMaxSize, &bucketCounts]
-                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &destinationBuckets, const uint8_t &countByte) {
+                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &targetBuckets, const uint8_t &countByte) {
                 if(start == end) return;
                 const ELEM* element = start;
                 const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
@@ -311,7 +311,7 @@ void dfr(ELEM *source, auto length) {
                 const unsigned len = (end-start);
 
                 for(unsigned i = 0; i < len; ++i, element++, target+=sizeof(ELEM), bucketCounts[*countTarget]++, countTarget+=sizeof(ELEM)) {
-                        ELEM **currentDestination = destinationBuckets + ((*target) << 1);
+                        ELEM **currentDestination = targetBuckets + ((*target) << 1);
                         if(*currentDestination < *(currentDestination+1)) {
                                 *((*currentDestination)++) = *element;
                         } else {
@@ -327,15 +327,15 @@ void dfr(ELEM *source, auto length) {
 
         const auto passOverInputsDealWithOverflowAndCounting =
                 [&sourceBuckets, &overflowBuckets, &passOverInputDealWithOverflowAndCounting]
-                (ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &destinationBuckets, const uint8_t &countByte) {
+                (ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &targetBuckets, const uint8_t &countByte) {
                         auto startSourceBucket = thisSource;
                         ELEM* endSourceBucket;
                         auto startOverflowBucket = thisBuffer;
                         ELEM* endOverflowBucket;
 
                         for(unsigned i = 0; i < 256; i++) {
-                                        passOverInputDealWithOverflowAndCounting(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, destinationBuckets, countByte);
-                                        passOverInputDealWithOverflowAndCounting(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, destinationBuckets, countByte);
+                                        passOverInputDealWithOverflowAndCounting(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, targetBuckets, countByte);
+                                        passOverInputDealWithOverflowAndCounting(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, targetBuckets, countByte);
 
                                         startSourceBucket=sourceBuckets[(i<<1)+1];
                                         startOverflowBucket = endOverflowBucket;
@@ -344,28 +344,115 @@ void dfr(ELEM *source, auto length) {
 
         const auto passOverInputDealExact =
                 []
-                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &destinationBuckets) {
+                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &targetBuckets) {
                 if(start == end) return;
                 const ELEM* element = start;
                 const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
                 const unsigned len = (end-start);
 
                 for(unsigned i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
-			*((*(destinationBuckets + (*target)))++) = *element;
+			*((*(targetBuckets + (*target)))++) = *element;
                 }
         };
 
         const auto passOverInputsDealExact =
                 [&sourceBuckets, &overflowBuckets, &passOverInputDealExact]
-                (ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &destinationBuckets) {
+                (ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &targetBuckets) {
                         auto startSourceBucket = thisSource;
                         ELEM* endSourceBucket;
                         auto startOverflowBucket = thisBuffer;
                         ELEM* endOverflowBucket;
 
                         for(unsigned i = 0; i < 256; i++) {
-                                        passOverInputDealExact(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, destinationBuckets);
-                                        passOverInputDealExact(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, destinationBuckets);
+                                        passOverInputDealExact(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, targetBuckets);
+                                        passOverInputDealExact(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, targetBuckets);
+
+                                        startSourceBucket=sourceBuckets[(i<<1)+1];
+                                        startOverflowBucket = endOverflowBucket;
+                        }
+        };
+
+        const auto passOverInputCounting =
+                [&bucketCounts]
+                (ELEM* start, ELEM *end, const uint8_t &countByte) {
+                if(start == end) return;
+                const ELEM* element = start;
+                const uint8_t *countTarget = reinterpret_cast<const uint8_t*>(element) + countByte;
+
+                const unsigned len = (end-start);
+
+                for(unsigned i = 0; i < len; ++i, element++, bucketCounts[*countTarget]++, countTarget+=sizeof(ELEM));
+        };
+
+        const auto passOverInputsCounting =
+                [&sourceBuckets, &overflowBuckets, &passOverInputCounting]
+                (ELEM *thisSource, ELEM *thisBuffer, const uint8_t &countByte) {
+                        auto startSourceBucket = thisSource;
+                        ELEM* endSourceBucket;
+                        auto startOverflowBucket = thisBuffer;
+                        ELEM* endOverflowBucket;
+
+                        for(unsigned i = 0; i < 256; i++) {
+                                        passOverInputCounting(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], countByte);
+                                        passOverInputCounting(startOverflowBucket, endOverflowBucket= overflowBuckets[i], countByte);
+
+                                        startSourceBucket=sourceBuckets[(i<<1)+1];
+                                        startOverflowBucket = endOverflowBucket;
+                        }
+        };
+
+
+        const auto passOverInputDealExactAndGatherLiveBits =
+                [&livebits, &bitmask]
+                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &targetBuckets) {
+                if(start == end) return;
+                const ELEM* element = start;
+                const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
+                const unsigned len = (end-start);
+
+                for(unsigned i = 0; i < len; ++i, livebits |= bitmask ^ reinterpret_cast<INT>(*(element++)), target+=sizeof(ELEM)) {
+			*((*(targetBuckets + (*target)))++) = *element;
+                }
+        };
+
+        const auto passOverInputsDealExactAndGatherLiveBits =
+                [&sourceBuckets, &overflowBuckets, &passOverInputDealExactAndGatherLiveBits]
+                (ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &targetBuckets) {
+                        auto startSourceBucket = thisSource;
+                        ELEM* endSourceBucket;
+                        auto startOverflowBucket = thisBuffer;
+                        ELEM* endOverflowBucket;
+
+                        for(unsigned i = 0; i < 256; i++) {
+                                        passOverInputDealExactAndGatherLiveBits(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, targetBuckets);
+                                        passOverInputDealExactAndGatherLiveBits(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, targetBuckets);
+
+                                        startSourceBucket=sourceBuckets[(i<<1)+1];
+                                        startOverflowBucket = endOverflowBucket;
+                        }
+        };
+
+        const auto passOverInputDealSimple =
+                []
+                (ELEM* start, ELEM *end, const auto &targetBuckets) {
+                if(start == end) return;
+                const ELEM* element = start;
+                const unsigned len = (end-start);
+
+                for(unsigned i = 0; i < len; ++i, *((*targetBuckets)++)=*(element++));
+        };
+
+        const auto passOverInputsDealSimple =
+                [&sourceBuckets, &overflowBuckets, &passOverInputDealSimple]
+                (ELEM *thisSource, ELEM *thisBuffer, const auto &targetBuckets) {
+                        auto startSourceBucket = thisSource;
+                        ELEM* endSourceBucket;
+                        auto startOverflowBucket = thisBuffer;
+                        ELEM* endOverflowBucket;
+
+                        for(unsigned i = 0; i < 256; i++) {
+                                        passOverInputDealSimple(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], targetBuckets);
+                                        passOverInputDealSimple(startOverflowBucket, endOverflowBucket= overflowBuckets[i], targetBuckets);
 
                                         startSourceBucket=sourceBuckets[(i<<1)+1];
                                         startOverflowBucket = endOverflowBucket;
@@ -523,26 +610,26 @@ void dfr(ELEM *source, auto length) {
 			convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
 
 			if(hasByteLists) {
-				passOverInput(source, source+length, currentByte, dealExact, noStats);
+				passOverInputDealExact(source, source+length, currentByte, destinationBuckets);
 			} else {
-				passOverInput(source, source+length, currentByte, dealExact, gatherLiveBits);
+				passOverInputDealExactAndGatherLiveBits(source, source+length, currentByte, destinationBuckets);
 				buildByteLists(currentByte);
 				hasByteLists=true;
 			}
 			swap();
 	        } else if(neededBytes == 2) {   // We need a pass that does count capturing, then deals back in place.
 						// We ignore when highest byte is dead; too annoying to check for
-			countedByte=currentByte+1;
+			countedByte = hasByteLists?bytes[1]:currentByte+1;
 			doEstimates();
-			passOverInput(source, source+length, currentByte, dealWithOverflow, countForByte);
+			passOverInputDealWithOverflowAndCounting(source, source+length, currentByte, destinationBuckets, countedByte);
 			processOverflow(currentByte);
 			swap();
 			convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
 
 			if(hasByteLists) {
-				passOverInputs(source, overflowBuffer, countedByte, dealExact, noStats);
+				passOverInputsDealExact(source, overflowBuffer, countedByte, destinationBuckets);
 			} else {
-				passOverInputs(source, overflowBuffer, countedByte, dealExact, gatherLiveBits);
+				passOverInputsDealExactAndGatherLiveBits(source, overflowBuffer, countedByte, destinationBuckets);
 				buildByteLists(currentByte);
 				hasByteLists=true;
 			}
@@ -556,7 +643,7 @@ void dfr(ELEM *source, auto length) {
 
 			doEstimates();
 			if(hasByteLists) {
-					passOverInput(source, source+length, currentByte, dealWithOverflow, noStats);
+					passOverInputDealWithOverflow(source, source+length, currentByte, destinationBuckets);
 			} else {
 					passOverInputDealWithOverflowAndGatherLiveBits(source, source+length, currentByte, destinationBuckets);
 					buildByteLists(currentByte);
@@ -583,7 +670,8 @@ std::cerr << "First Pass Time: " << std::chrono::duration_cast<std::chrono::micr
 
 		if(setByteListHere && currentByte != bytes[0]) { //We did a pass that wasn't needed. Reverse and recurse
 			destinationBuckets[0] = destination; //simpleDeal needs this
-			passOverInputs(source, overflowBuffer, currentByte, simpleDeal, noStats);
+			//passOverInputs(source, overflowBuffer, currentByte, simpleDeal, noStats);
+			passOverInputsDealSimple(source, overflowBuffer, destinationBuckets);
 			swap();
 			return true; //Tell the caller to re-call fr now that we're "fixed" things.
 		}
@@ -593,7 +681,8 @@ std::cerr << "First Pass Time: " << std::chrono::duration_cast<std::chrono::micr
 				//Ok, we did a pass, it was needed, but we should have made it an
 				// exact pass. We have to fix that here.
 			destinationBuckets[0] = destination; //simpleDeal needs this
-			passOverInputs(source, overflowBuffer, currentByte, simpleDeal, noStats);
+			//passOverInputs(source, overflowBuffer, currentByte, simpleDeal, noStats);
+			passOverInputsDealSimple(source, overflowBuffer, destinationBuckets);
 			swap();
 			std::memcpy(destination, source, length*sizeof(ELEM));
 			swap();
@@ -601,9 +690,11 @@ std::cerr << "First Pass Time: " << std::chrono::duration_cast<std::chrono::micr
 		} else if (numBytes == 2) {	//We did one of two passes. 
 			//We did a real pass, it just would have helped to have counted first.
 			countedByte = bytes[1];
-			passOverInputs(source, overflowBuffer, countedByte, noDeal, countForByte);
+			//passOverInputs(source, overflowBuffer, countedByte, noDeal, countForByte);
+			passOverInputsCounting(source, overflowBuffer, countedByte);
 			convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
-			passOverInputs(source, overflowBuffer, countedByte, dealExact, noStats);
+			//passOverInputs(source, overflowBuffer, countedByte, dealExact, noStats);
+			passOverInputsDealExact(source, overflowBuffer, countedByte, destinationBuckets);
 			swap();
 		} else {
 
