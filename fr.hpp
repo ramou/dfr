@@ -237,6 +237,72 @@ void dfr(ELEM *source, auto length) {
 		}
 	};
 
+        const auto passOverInputDealWithOverflowAndGatherLiveBits = 
+		[&source, &overflow, &overflowCounts, &overflowBuffer, &overflowMaxSize, &livebits, &bitmask]
+		(ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &destinationBuckets) {
+                if(start == end) return;
+                const ELEM* element = start;
+                const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
+                const unsigned len = (end-start);
+
+                for(unsigned i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
+			livebits |= bitmask ^ reinterpret_cast<INT>(*element);
+			auto currentDestination = destinationBuckets[(*target) << 1];
+			if(currentDestination < destinationBuckets[((*target) << 1) + 1]) {
+				*currentDestination = *element;
+				destinationBuckets[(*target) << 1]++;
+ 			} else {
+				overflowCounts[*target]++;
+				*overflow = *element;
+				overflow++;
+				if(overflow == overflowBuffer+(2 * overflowMaxSize)) {
+					overflow = source;
+				}
+			}
+                }
+        };
+
+        const auto passOverInputDealWithOverflow =
+                [&source, &overflow, &overflowCounts, &overflowBuffer, &overflowMaxSize]
+                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &destinationBuckets) {
+                if(start == end) return;
+                const ELEM* element = start;
+                const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
+                const unsigned len = (end-start);
+
+                for(unsigned i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
+                        auto currentDestination = destinationBuckets[(*target) << 1];
+                        if(currentDestination < destinationBuckets[((*target) << 1) + 1]) {
+                                *currentDestination = *element;
+                                destinationBuckets[(*target) << 1]++;
+                        } else {
+                                overflowCounts[*target]++;
+                                *overflow = *element;
+                                overflow++;
+                                if(overflow == overflowBuffer+(2 * overflowMaxSize)) {
+                                        overflow = source;
+                                }
+                        }
+                }
+        };
+
+        const auto passOverInputsDealWithOverflow = 
+		[&sourceBuckets, &overflowBuckets, &passOverInputDealWithOverflow]
+		(ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &destinationBuckets) {
+                        auto startSourceBucket = thisSource;
+                        ELEM* endSourceBucket;
+                        auto startOverflowBucket = thisBuffer;
+                        ELEM* endOverflowBucket;
+
+                        for(unsigned i = 0; i < 256; i++) {
+                                        passOverInputDealWithOverflow(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, destinationBuckets);
+                                        passOverInputDealWithOverflow(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, destinationBuckets);
+
+                                        startSourceBucket=sourceBuckets[(i<<1)+1];
+                                        startOverflowBucket = endOverflowBucket;
+                        }
+        };
+
 	const auto passOverInputs = [&](ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &deal, const auto &gatherStats) {
 			auto startSourceBucket = thisSource;
 			ELEM* endSourceBucket;
@@ -413,11 +479,16 @@ void dfr(ELEM *source, auto length) {
 			swap();
 	        } else {
 			//Do a first pass
+#ifdef TIMINGS
+        std::chrono::high_resolution_clock::time_point end;
+        std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+#endif
+
 			doEstimates();
 			if(hasByteLists) {
 					passOverInput(source, source+length, currentByte, dealWithOverflow, noStats);
 			} else {
-					passOverInput(source, source+length, currentByte, dealWithOverflow, gatherLiveBits);
+					passOverInputDealWithOverflowAndGatherLiveBits(source, source+length, currentByte, destinationBuckets);
 					buildByteLists(currentByte);
 					hasByteLists=true;
 					setByteListHere=true;
@@ -428,6 +499,12 @@ std::cout << "Top Bytes: " << topBytesSize << " Bottom Bytes: " << bottomBytesSi
 			}
 			processOverflow(currentByte);
 			swap();
+#ifdef TIMINGS
+end = std::chrono::high_resolution_clock::now();
+std::cerr << "First Pass Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+#endif
+
+
 
 		//We have to account for the newly generated numBytes being either 0, 1, 2 or 3 (we did one pass, but numbytes still has it... 
 		//our one pass could theoretically have been over dead bits), which means we found enough dead bits to eliminate
@@ -461,26 +538,49 @@ std::cout << "Top Bytes: " << topBytesSize << " Bottom Bytes: " << bottomBytesSi
 		} else {
 
 				for(int i = 1; i < (numBytes - 2); i++) {
+#ifdef TIMINGS
+        start = std::chrono::high_resolution_clock::now();
+#endif
+
 						doEstimates();
-						passOverInputs(source, overflowBuffer, bytes[i], dealWithOverflow, noStats);
+						passOverInputsDealWithOverflow(source, overflowBuffer, bytes[i], destinationBuckets);
 						processOverflow(bytes[i]);
 						swap();
+#ifdef TIMINGS
+end = std::chrono::high_resolution_clock::now();
+std::cerr << "Middle Pass Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+#endif
+
 				}
 
 
 				//Do last two passes
+#ifdef TIMINGS
+        start = std::chrono::high_resolution_clock::now();
+#endif
+
 				countedByte=bytes[numBytes-1];
 				doEstimates();
 				passOverInputs(source, overflowBuffer, bytes[numBytes-2], dealWithOverflow, countForByte);
 				processOverflow(bytes[numBytes-2]);
-
 				swap();
 				convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
 
+#ifdef TIMINGS
+end = std::chrono::high_resolution_clock::now();
+std::cerr << "Next-To-Last Pass Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+start = std::chrono::high_resolution_clock::now();
+#endif
+
+
 				//Deal last pass in top bytes
 				passOverInputs(source, overflowBuffer, countedByte, dealExact, noStats);
-
 				swap();
+#ifdef TIMINGS
+end = std::chrono::high_resolution_clock::now();
+std::cerr << "Last Pass Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+#endif
+
 			}
 		}
 
