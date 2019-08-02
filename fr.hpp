@@ -245,12 +245,10 @@ void dfr(ELEM *source, auto length) {
                 const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
                 const unsigned len = (end-start);
 
-                for(unsigned i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
-			livebits |= bitmask ^ reinterpret_cast<INT>(*element);
-			auto currentDestination = destinationBuckets[(*target) << 1];
-			if(currentDestination < destinationBuckets[((*target) << 1) + 1]) {
-				*currentDestination = *element;
-				destinationBuckets[(*target) << 1]++;
+                for(unsigned i = 0; i < len; ++i, livebits |= bitmask ^ reinterpret_cast<INT>(*(element++)), target+=sizeof(ELEM)) {
+			ELEM **currentDestination = destinationBuckets + ((*target) << 1);
+			if(*currentDestination < *(currentDestination+1)) {
+				*((*currentDestination)++) = *element;
  			} else {
 				overflowCounts[*target]++;
 				*overflow = *element;
@@ -271,10 +269,9 @@ void dfr(ELEM *source, auto length) {
                 const unsigned len = (end-start);
 
                 for(unsigned i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
-                        auto currentDestination = destinationBuckets[(*target) << 1];
-                        if(currentDestination < destinationBuckets[((*target) << 1) + 1]) {
-                                *currentDestination = *element;
-                                destinationBuckets[(*target) << 1]++;
+                        ELEM **currentDestination = destinationBuckets + ((*target) << 1);
+                        if(*currentDestination < *(currentDestination+1)) {
+                                *((*currentDestination)++) = *element;
                         } else {
                                 overflowCounts[*target]++;
                                 *overflow = *element;
@@ -302,6 +299,49 @@ void dfr(ELEM *source, auto length) {
                                         startOverflowBucket = endOverflowBucket;
                         }
         };
+
+        const auto passOverInputDealWithOverflowAndCounting =
+                [&source, &overflow, &overflowCounts, &overflowBuffer, &overflowMaxSize, &bucketCounts]
+                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &destinationBuckets, const uint8_t &countByte) {
+                if(start == end) return;
+                const ELEM* element = start;
+                const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
+		const uint8_t *countTarget = reinterpret_cast<const uint8_t*>(element) + countByte;
+
+                const unsigned len = (end-start);
+
+                for(unsigned i = 0; i < len; ++i, element++, target+=sizeof(ELEM), bucketCounts[*countTarget]++, countTarget+=sizeof(ELEM)) {
+                        ELEM **currentDestination = destinationBuckets + ((*target) << 1);
+                        if(*currentDestination < *(currentDestination+1)) {
+                                *((*currentDestination)++) = *element;
+                        } else {
+                                overflowCounts[*target]++;
+                                *overflow = *element;
+                                overflow++;
+                                if(overflow == overflowBuffer+(2 * overflowMaxSize)) {
+                                        overflow = source;
+                                }
+                        }
+                }
+        };
+
+        const auto passOverInputsDealWithOverflowAndCounting =
+                [&sourceBuckets, &overflowBuckets, &passOverInputDealWithOverflowAndCounting]
+                (ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &destinationBuckets, const uint8_t &countByte) {
+                        auto startSourceBucket = thisSource;
+                        ELEM* endSourceBucket;
+                        auto startOverflowBucket = thisBuffer;
+                        ELEM* endOverflowBucket;
+
+                        for(unsigned i = 0; i < 256; i++) {
+                                        passOverInputDealWithOverflowAndCounting(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, destinationBuckets, countByte);
+                                        passOverInputDealWithOverflowAndCounting(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, destinationBuckets, countByte);
+
+                                        startSourceBucket=sourceBuckets[(i<<1)+1];
+                                        startOverflowBucket = endOverflowBucket;
+                        }
+        };
+
 
 	const auto passOverInputs = [&](ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &deal, const auto &gatherStats) {
 			auto startSourceBucket = thisSource;
@@ -561,7 +601,8 @@ std::cerr << "Middle Pass Time: " << std::chrono::duration_cast<std::chrono::mic
 
 				countedByte=bytes[numBytes-1];
 				doEstimates();
-				passOverInputs(source, overflowBuffer, bytes[numBytes-2], dealWithOverflow, countForByte);
+				//passOverInputs(source, overflowBuffer, bytes[numBytes-2], dealWithOverflow, countForByte);
+				passOverInputsDealWithOverflowAndCounting(source, overflowBuffer, bytes[numBytes-2], destinationBuckets, bytes[numBytes-1]);
 				processOverflow(bytes[numBytes-2]);
 				swap();
 				convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
