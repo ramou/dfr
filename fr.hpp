@@ -34,7 +34,13 @@ typedef unsigned __int8 uint8_t;
 #ifdef TEST_THRESHOLD
 const int DIVERSION_THRESHOLD=TEST_THRESHOLD;
 #else
-const int DIVERSION_THRESHOLD = 10;
+const int DIVERSION_THRESHOLD = 12;
+#endif
+
+#ifdef TEST_STDSORT_THRESHOLD
+const int STDSORT_DIVERSION_THRESHOLD=TEST_STD_SORTTHRESHOLD;
+#else
+const int STDSORT_DIVERSION_THRESHOLD = 100;
 #endif
 
 const int DISTRIBUTION_SENSITIVE_THRESHOLD = 4096; 	/* 	If a length of data to be processed is smaller than this and
@@ -657,7 +663,7 @@ std::cout << "Top Bytes: " << topBytesSize << " Bottom Bytes: " << bottomBytesSi
 #ifdef DEBUG
 #ifdef TIMINGS
 end = std::chrono::high_resolution_clock::now();
-std::cerr << "First Pass Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+std::cout << "First Pass Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
 #endif
 #endif
 
@@ -712,7 +718,7 @@ std::cerr << "First Pass Time: " << std::chrono::duration_cast<std::chrono::micr
 #ifdef DEBUG
 #ifdef TIMINGS
 end = std::chrono::high_resolution_clock::now();
-std::cerr << "Middle Pass Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+std::cout << "Middle Pass Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
 #endif
 #endif
 
@@ -736,7 +742,7 @@ std::cerr << "Middle Pass Time: " << std::chrono::duration_cast<std::chrono::mic
 #ifdef DEBUG
 #ifdef TIMINGS
 end = std::chrono::high_resolution_clock::now();
-std::cerr << "Next-To-Last Pass Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+std::cout << "Next-To-Last Pass Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
 start = std::chrono::high_resolution_clock::now();
 #endif
 #endif
@@ -748,7 +754,7 @@ start = std::chrono::high_resolution_clock::now();
 #ifdef DEBUG
 #ifdef TIMINGS
 end = std::chrono::high_resolution_clock::now();
-std::cerr << "Last Pass Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+std::cout << "Last Pass Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
 #endif
 #endif
 
@@ -774,7 +780,7 @@ std::cerr << "Last Pass Time: " << std::chrono::duration_cast<std::chrono::micro
 #ifdef DEBUG
 #ifdef TIMINGS
 end = std::chrono::high_resolution_clock::now();
-std::cerr << "Time Top: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+std::cout << "Time Top: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
 start = std::chrono::high_resolution_clock::now();
 #endif
 #endif
@@ -790,7 +796,7 @@ start = std::chrono::high_resolution_clock::now();
 
 		// ((reinterpret_cast<INT>(element))>
 
-		auto getHighBits = [&highBitMask](const ELEM &element) {
+		const auto getHighBits = [&highBitMask](const ELEM &element) {
 			return (reinterpret_cast<INT>(element)) & highBitMask;
 		};
 
@@ -814,24 +820,29 @@ start = std::chrono::high_resolution_clock::now();
 					while(endDefiniteLongRun > source && (getHighBits(*(endDefiniteLongRun-1)) ^ currentBits)) endDefiniteLongRun--;
 
 					//process the long run.
-					const auto oldSource = source;
-					const auto oldDestination = destination;
-					const auto oldLength = length;
-					source = startDefiniteLongRun;
-					destination = destination + (startDefiniteLongRun-source);
-					length = endDefiniteLongRun - startDefiniteLongRun;
-					if(overflowMaxSize>0) overflow = overflowBuffer + overflowMaxSize;
-					else overflow = source;
+                                        if((endDefiniteLongRun-startDefiniteLongRun) < STDSORT_DIVERSION_THRESHOLD) {
+                                                std::sort(startDefiniteLongRun, endDefiniteLongRun);
+                                        } else {
+						const auto oldSource = source;
+						const auto oldDestination = destination;
+						const auto oldLength = length;
+						source = startDefiniteLongRun;
+						destination = destination + (startDefiniteLongRun-source);
+						length = endDefiniteLongRun - startDefiniteLongRun;
 
-					fr(bottomBytes, bottomBytesSize);
-					if(bottomBytesSize%2) {
-						std::memcpy(destination, source, length*sizeof(ELEM));
+						if(overflowMaxSize>0) overflow = overflowBuffer + overflowMaxSize;
+						else overflow = source;
+
+						fr(bottomBytes, bottomBytesSize);
+						if(bottomBytesSize%2) {
+							std::memcpy(destination, source, length*sizeof(ELEM));
+						}
+
+
+						source = oldSource;
+						destination = oldDestination;
+						length = oldLength;
 					}
-
-					source = oldSource;
-					destination = oldDestination;
-					length = oldLength;
-
 					//Start a new short run
 					startSmallRuns=endDefiniteLongRun;
 
@@ -895,7 +906,7 @@ start = std::chrono::high_resolution_clock::now();
 #ifdef DEBUG
 #ifdef TIMINGS
 end = std::chrono::high_resolution_clock::now();
-std::cerr << "Time Bottom: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+std::cout << "Time Bottom: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
 #endif
 #endif
 
