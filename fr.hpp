@@ -49,6 +49,15 @@ const int DISTRIBUTION_SENSITIVE_THRESHOLD = 4096; 	/* 	If a length of data to b
 								the consequences. This can come up on on the first pass of the
 								top bytes or possibly the first pass of the bottom bytes.
 							*/
+const int LADLE_SIZE = 256;
+
+#ifdef TEST_LADLE_THRESHOLD
+const int LADLE_THRESHOLD = TEST_LADLE_THRESHOLD;
+#else
+const unsigned LADLE_THRESHOLD = 4000000000; //roughlt LADLE_SIZE*256 for a 1-to-1
+#endif
+
+const int PREFETCH_LOOKAHEAD = 1;
 
 template <typename INT, typename ELEM>
 void dfr(ELEM *source, auto length) {
@@ -100,7 +109,9 @@ void dfr(ELEM *source, auto length) {
 	//Initially these will be the starting positions into the overflow buffer
 	//Once dumped into the overflow buffer, they will then be the ending positions
 	//when dealing out of the overflow buffer
-	ELEM **overflowBuckets = new ELEM*[256]; //Made bigger to avoid valgrind error :\
+	ELEM **overflowBuckets = new ELEM*[256];
+
+	ELEM **ladleBuckets = new ELEM*[256];
 
 	//If we ever actually count elements upon placing (e.g. a last pass), we should
 	//use this before converting it to *buckets*
@@ -112,7 +123,6 @@ void dfr(ELEM *source, auto length) {
 	unsigned* overflowCounts = new unsigned[256];
         std::memset(overflowCounts, 0, 256*sizeof(unsigned)); //This is needed!
 
-
 	//We don't initialize this till we need it. We should check overflowMaxSize 
 	//and expend it as needed, re-initializing the buffer. There may be benefit
 	//to being fancy about how we choose to grow this buffer, bur for now I don't 
@@ -120,6 +130,18 @@ void dfr(ELEM *source, auto length) {
 	//should be a realistic expectation given the newer sampling approach.
 	int overflowMaxSize = 0;
 	ELEM *overflowBuffer = NULL;
+
+	ELEM *ladleBuffer = NULL;
+
+	const auto resetLadleBuckets = [&ladleBuffer, &ladleBuckets] {
+		ladleBuffer = new ELEM[LADLE_SIZE*256];
+		ladleBuckets[0] = ladleBuffer;
+		for(unsigned i = 1; i < 256; i++) ladleBuckets[i] = ladleBuckets[i-1]+LADLE_SIZE;
+	};
+
+	if(length > LADLE_THRESHOLD) {
+		resetLadleBuckets();
+	}
 
 	/**
 		3) Estimating relevant top (high-order) bytes
@@ -241,6 +263,100 @@ void dfr(ELEM *source, auto length) {
 		}
 	};
 
+	const auto processLadle = 
+		[&ladleBuffer, &ladleBuckets, &destinationBuckets, &overflow, &overflowBuffer, &overflowMaxSize, &source, &destination, &overflowCounts, &length]
+		(const auto &currentByte) {
+
+#ifdef DEBUG_LADLE
+std::cout << 
+"Processing ladle for byte " << +currentByte
+<< std::endl;
+#endif
+		for(int i = 0; i < PREFETCH_LOOKAHEAD; i++) __builtin_prefetch((const void*)(destinationBuckets[i]),0,0);
+		for(unsigned i = 0; i < 256; i++) {
+			if(i < 256-PREFETCH_LOOKAHEAD) __builtin_prefetch((const void*)(destinationBuckets[i+PREFETCH_LOOKAHEAD]),0,0);
+			ELEM *start = ladleBuffer+i*LADLE_SIZE;
+			ELEM *end = ladleBuckets[i];
+			unsigned len = end-start;
+			if(len > 0) {
+#ifdef DEBUG_LADLE
+std::cout << "ladle bucket " << i << ": ";
+for(int i = 0; i < len; i++) std::cout << *(start+i) << " ";
+std::cout << std::endl;
+#endif
+
+				const uint8_t *target = reinterpret_cast<const uint8_t*>(start) + currentByte;
+				ELEM **currentDestination = destinationBuckets + ((*target) << 1);
+				unsigned lengthLeft = *(currentDestination+1)-*currentDestination;
+				if(len <= lengthLeft) { //we fit
+#ifdef DEBUG_LADLE
+std::cout << "The data chunk of " << len << " elements fits in it's regular bucket located at " << +(*currentDestination)-destination << std::endl;
+#endif
+
+					//std::memcpy(destination, source, length*sizeof(ELEM));
+					std::memcpy(*currentDestination, start, len*sizeof(ELEM));
+					*currentDestination += len;
+#ifdef DEBUG_LADLE
+std::cout << "\tIts regular bucket is now located at " << +(*currentDestination)-destination << std::endl;
+#endif
+
+				} else {//we don't fit. paste as much as we can, then use overflow
+#ifdef DEBUG_LADLE
+std::cout << "The data chunk of " << len << " elements did not fit in its regular bucket located at " << +(*currentDestination)-destination << " so we could only deal in " << lengthLeft << " elements" << std::endl;
+#endif
+					const unsigned overflowDeal = (len-lengthLeft);
+					std::memcpy(*currentDestination, start, lengthLeft*sizeof(ELEM));
+					*currentDestination += lengthLeft;
+#ifdef DEBUG_LADLE
+std::cout << "\tIts regular bucket is now located at " << +(*currentDestination)-destination << std::endl;
+#endif
+
+					if((overflowBuffer+overflowMaxSize <= overflow) && (overflow <= overflowBuffer+(2 * overflowMaxSize))) {
+						unsigned overflowLeft = overflowBuffer+(2 * overflowMaxSize)-overflow;
+						if((len-lengthLeft) <= overflowLeft) { //fits in initial overflow
+#ifdef DEBUG_LADLE
+std::cout << "\tIt did fit into the regular overflow at " << overflow - (overflowBuffer+overflowMaxSize) << " where we dealt " << overflowDeal << " elements" << std::endl;
+#endif
+							std::memcpy(overflow, start+lengthLeft, overflowDeal*sizeof(ELEM));
+							overflow+= overflowDeal;
+						} else {
+#ifdef DEBUG_LADLE
+std::cout << "\tIt did not fit into the regular overflow at " << overflow - (overflowBuffer+overflowMaxSize) << " so we could only deal  " << overflowLeft << " elements" << std::endl;
+#endif
+							std::memcpy(overflow, start+lengthLeft, (overflowLeft)*sizeof(ELEM));
+
+#ifdef DEBUG_LADLE
+std::cout << "\tWe then dealt the remaining " << (len-lengthLeft-overflowLeft) << " elements to the beginning of source" << std::endl;
+#endif
+
+							std::memcpy(source, start+lengthLeft+overflowLeft, (overflowDeal-overflowLeft)*sizeof(ELEM));
+							overflow=source+(overflowDeal-overflowLeft);
+						}
+					} else { // we have to put it in overflow overflow, which always fits.
+#ifdef DEBUG_LADLE
+std::cout << "\tWe then dealt the remaining " << overflowDeal <<  " elements into the overflow overflow (the beginning of source) " << overflow-source << std::endl;
+#endif
+						std::memcpy(overflow, start+lengthLeft, overflowDeal*sizeof(ELEM));
+						overflow += overflowDeal;
+					}
+					//Either way the overflow count is adjusted for everything that didn't get dealt into the bucket.
+					overflowCounts[*target]+=overflowDeal;
+				}
+				ladleBuckets[i] = start;
+			}
+		}
+#ifdef DEBUG_LADLE
+std::cout << "destination: ";
+for(int i = 0; i < length; i++) std::cout << *(destination+i) << " ";
+std::cout << std::endl;
+std::cout << "overfow(source): ";
+for(int i = 0; i < overflow-source; i++) std::cout << *(source+i) << " ";
+std::cout << std::endl;
+#endif
+
+	};
+
+
         const auto passOverInputDealWithOverflowAndGatherLiveBits = 
 		[&source, &overflow, &overflowCounts, &overflowBuffer, &overflowMaxSize, &livebits, &bitmask]
 		(ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &targetBuckets) {
@@ -263,6 +379,42 @@ void dfr(ELEM *source, auto length) {
 			}
                 }
         };
+
+        const auto passOverInputDealWithOverflowAndGatherLiveBitsLadle =
+                [&source, &overflow, &overflowCounts, &overflowBuffer, &overflowMaxSize, &livebits, &bitmask, &processLadle, &ladleBuckets, &length, &ladleBuffer]
+                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &targetBuckets) {
+                if(start == end) return;
+                const ELEM* element = start;
+                const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
+                const unsigned len = (end-start);
+
+		if(length > LADLE_THRESHOLD) {
+			for(unsigned i = 0; i < len; ++i, livebits |= bitmask ^ reinterpret_cast<INT>(*(element++)), target+=sizeof(ELEM)) {
+				if(*(ladleBuckets + (*target)) == (ladleBuffer + (*target + 1)*LADLE_SIZE )) {
+					processLadle(currentByte);
+					*((*(ladleBuckets + (*target)))++) = *element;
+				} else {
+					*((*(ladleBuckets + (*target)))++) = *element;
+				}
+			}
+			processLadle(currentByte);
+		} else {
+                	for(unsigned i = 0; i < len; ++i, livebits |= bitmask ^ reinterpret_cast<INT>(*(element++)), target+=sizeof(ELEM)) {
+                        	ELEM **currentDestination = targetBuckets + ((*target) << 1);
+                        	if(*currentDestination < *(currentDestination+1)) {
+                                	*((*currentDestination)++) = *element;
+                        	} else {
+                                	overflowCounts[*target]++;
+                                	*overflow = *element;
+                                	overflow++;
+                                	if(overflow == overflowBuffer+(2 * overflowMaxSize)) {
+                                        	overflow = source;
+                                	}
+                        	}
+                	}
+		}
+        };
+
 
         const auto passOverInputDealWithOverflow =
                 [&source, &overflow, &overflowCounts, &overflowBuffer, &overflowMaxSize]
@@ -295,17 +447,18 @@ void dfr(ELEM *source, auto length) {
                         auto startOverflowBucket = thisBuffer;
                         ELEM* endOverflowBucket;
 
-                        for(unsigned i = 0; i < 256; i++) {
+                        	for(unsigned i = 0; i < 256; i++) {
                                         passOverInputDealWithOverflow(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, targetBuckets);
                                         passOverInputDealWithOverflow(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, targetBuckets);
 
                                         startSourceBucket=sourceBuckets[(i<<1)+1];
                                         startOverflowBucket = endOverflowBucket;
-                        }
+                        	}
+
         };
 
         const auto passOverInputDealWithOverflowAndCounting =
-                [&source, &overflow, &overflowCounts, &overflowBuffer, &overflowMaxSize, &bucketCounts]
+                [&source, &overflow, &overflowCounts, &overflowBuffer, &overflowMaxSize, &bucketCounts, &destination]
                 (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &targetBuckets, const uint8_t &countByte) {
                 if(start == end) return;
                 const ELEM* element = start;
@@ -315,7 +468,9 @@ void dfr(ELEM *source, auto length) {
                 const unsigned len = (end-start);
 
                 for(unsigned i = 0; i < len; ++i, element++, target+=sizeof(ELEM), bucketCounts[*countTarget]++, countTarget+=sizeof(ELEM)) {
-                        ELEM **currentDestination = targetBuckets + ((*target) << 1);
+
+
+          ELEM **currentDestination = targetBuckets + ((*target) << 1);
                         if(*currentDestination < *(currentDestination+1)) {
                                 *((*currentDestination)++) = *element;
                         } else {
@@ -338,9 +493,15 @@ void dfr(ELEM *source, auto length) {
                         ELEM* endOverflowBucket;
 
                         for(unsigned i = 0; i < 256; i++) {
-                                        passOverInputDealWithOverflowAndCounting(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, targetBuckets, countByte);
-                                        passOverInputDealWithOverflowAndCounting(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, targetBuckets, countByte);
+				endSourceBucket = sourceBuckets[i<<1];
+				endOverflowBucket= overflowBuckets[i];
 
+				if(endSourceBucket-startSourceBucket) {
+                                        passOverInputDealWithOverflowAndCounting(startSourceBucket, endSourceBucket, currentByte, targetBuckets, countByte);
+				}
+				if(endOverflowBucket-startOverflowBucket) {
+                                        passOverInputDealWithOverflowAndCounting(startOverflowBucket, endOverflowBucket, currentByte, targetBuckets, countByte);
+				}
                                         startSourceBucket=sourceBuckets[(i<<1)+1];
                                         startOverflowBucket = endOverflowBucket;
                         }
@@ -494,12 +655,6 @@ void dfr(ELEM *source, auto length) {
 		}
 	};
 
-	#ifdef DEBUG
-	const auto outputDeal = [&destinationBuckets](const auto &targetBucketIndex, const auto &element) {
-		std::cout << (reinterpret_cast<INT>(element)) << " ";
-        };
-	#endif
-
 	const auto simpleDeal = [&destinationBuckets](const auto &targetBucketIndex, const auto &element) {
 		auto currentDestination = destinationBuckets[0];
                 *currentDestination=element;
@@ -545,7 +700,7 @@ void dfr(ELEM *source, auto length) {
 
 	const auto processOverflow = [&](const auto &currentByte){
 		//Check if overflow is in source or if it still fits within existing buffer.
-		if((source <= overflow) && ( overflow <= (source+length))) {
+		if((source < overflow) && ( overflow <= (source+length))) {
 			//We used up the old overflow so we need a bigger overflow.
 
 			//Make a new buffer
@@ -559,7 +714,7 @@ void dfr(ELEM *source, auto length) {
 
 			//pass left-to right from the overflow buffer, then from the front of the source also used as overflow buffer.
 			passOverInput(oldOverflowBuffer+overflowMaxSize, oldOverflowBuffer+(2*overflowMaxSize), currentByte, dealToOverflow, noStats);
-			passOverInput(source, overflow, currentByte, dealToOverflow, noStats);
+			if(overflow-source)passOverInput(source, overflow, currentByte, dealToOverflow, noStats);
 
 			//Assign the new buffer size.
 			overflowMaxSize = newsize;
@@ -573,7 +728,7 @@ void dfr(ELEM *source, auto length) {
 		} else {
 			if(overflowMaxSize != 0){ //If we processed overflow without ever using overflow we skip this stuff
 				convertCountsToContiguousBuckets(overflowCounts, overflowBuckets, overflowBuffer);
-				passOverInput(overflowBuffer+overflowMaxSize,overflow, currentByte, dealToOverflow, noStats);
+				passOverInput(overflowBuffer+overflowMaxSize,(source==overflow)?(overflowBuffer+(2*overflowMaxSize)):overflow, currentByte, dealToOverflow, noStats);
 				overflow = overflowBuffer+overflowMaxSize;
 			}
 		}
@@ -618,6 +773,10 @@ void dfr(ELEM *source, auto length) {
 				passOverInputDealExactAndGatherLiveBits(source, source+length, currentByte, destinationBuckets);
 				buildByteLists(currentByte);
 				hasByteLists=true;
+#ifdef DEBUG
+std::cout << "After 1 pass Top Bytes: " << topBytesSize << " Bottom Bytes: " << bottomBytesSize << std::endl;
+#endif
+
 			}
 			swap();
 	        } else if(neededBytes == 2) {   // We need a pass that does count capturing, then deals back in place.
@@ -635,6 +794,9 @@ void dfr(ELEM *source, auto length) {
 				passOverInputsDealExactAndGatherLiveBits(source, overflowBuffer, countedByte, destinationBuckets);
 				buildByteLists(currentByte);
 				hasByteLists=true;
+#ifdef DEBUG
+std::cout << "After 2 passes Top Bytes: " << topBytesSize << " Bottom Bytes: " << bottomBytesSize << std::endl;
+#endif
 			}
 			swap();
 	        } else {
@@ -648,7 +810,7 @@ void dfr(ELEM *source, auto length) {
 			if(hasByteLists) {
 					passOverInputDealWithOverflow(source, source+length, currentByte, destinationBuckets);
 			} else {
-					passOverInputDealWithOverflowAndGatherLiveBits(source, source+length, currentByte, destinationBuckets);
+					passOverInputDealWithOverflowAndGatherLiveBitsLadle(source, source+length, currentByte, destinationBuckets);
 					buildByteLists(currentByte);
 					hasByteLists=true;
 					setByteListHere=true;
@@ -921,5 +1083,7 @@ std::cout << "Time Bottom: " << std::chrono::duration_cast<std::chrono::microsec
 	delete [] bottomBytes;
 	delete [] bucketCounts;
 	delete [] overflowCounts;
+	delete [] ladleBuffer;
+	delete [] ladleBuckets;
 }
 #endif

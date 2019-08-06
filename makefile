@@ -9,8 +9,8 @@ timing: ;
 
 valgrind: ;
 	@if [ -n "$(shell which valgrind)" ]; then \
-	echo "c++ -g -std=c++14 -DNOTRANDOM -DTEST_THRESHOLD=4 unit.cpp -o test" ; \
-	c++ -g -std=c++14 -DNOTRANDOM -DTEST_THRESHOLD=4 unit.cpp -o test ; \
+	echo "c++ -g -std=c++14 -DNOTRANDOM -DTEST_THRESHOLD=4 -DTEST_LADLE_THRESHOLD=10 unit.cpp -o test" ; \
+	c++ -g -std=c++14 -DNOTRANDOM -DTEST_THRESHOLD=4 -DTEST_LADLE_THRESHOLD=10 unit.cpp -o test ; \
 	echo "valgrind --error-exitcode=2 -q --leak-check=yes ./test $(filter-out $@,$(MAKECMDGOALS))" ; \
 	if ! valgrind --error-exitcode=2 -q --leak-check=yes ./test $(filter-out $@,$(MAKECMDGOALS)) ; then \
 	exit 2; \
@@ -21,12 +21,12 @@ valgrind: ;
 	fi
 
 buildtest: ;
-	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM -DTEST_THRESHOLD=4 unit.cpp -o test
-	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM -DTEST_THRESHOLD=4 perform.cpp -o perform
+	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM -DTEST_THRESHOLD=4 -DTEST_LADLE_THRESHOLD=10 unit.cpp -o test
+	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM -DTEST_THRESHOLD=4 -DTEST_LADLE_THRESHOLD=10 perform.cpp -o perform
 
 tests: buildtest ;
 	./test
 
 debug: ;
-	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM -DTEST_THRESHOLD=4 unit.cpp -o test
+	c++ -g -std=c++14 -DDEBUG -DNOTRANDOM -DTEST_THRESHOLD=4 -DTEST_LADLE_THRESHOLD=10 unit.cpp -o test
 	./test -s $(filter-out $@,$(MAKECMDGOALS))
