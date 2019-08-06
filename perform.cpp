@@ -76,9 +76,14 @@ std::cout << "Random values made" << std::endl;
 #ifdef TIMINGS
 end = std::chrono::high_resolution_clock::now();
 std::cerr << "Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+start = std::chrono::high_resolution_clock::now();
 #endif
 
 	std::sort(safe, safe+targetLength);
+#ifdef TIMINGS
+end = std::chrono::high_resolution_clock::now();
+std::cerr << "std::sort Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+#endif
 
 	if(!theSame(safe, values, targetLength)) {
 		 std::cout << "Values don't match expected sorted values" << std::endl;

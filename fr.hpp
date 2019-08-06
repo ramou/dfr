@@ -66,14 +66,29 @@ void dfr(ELEM *source, auto length) {
 		1) Diverting on small lengths
 	*/
 
-	auto insertionSort = [](ELEM *source, const auto &length) {
+	auto insertionSort = [](ELEM *source, const auto &length) {	
         	ELEM buf;
         	INT val;
-        	for(unsigned i = 1; i < length; i++) {
-			unsigned cursor = i;
+        	unsigned i = 1;
+        	unsigned cursor;
+        	for(; i < ((length <= DIVERSION_THRESHOLD)?length:DIVERSION_THRESHOLD); i++) {
+        		cursor=i;
+			buf = source[cursor];
+			val = *(reinterpret_cast<INT*>(source + (cursor)));
+			while(cursor > 0 &&
+			val < *(reinterpret_cast<INT*>(source + (cursor-1)))
+			) {
+				source[cursor]=source[cursor-1];
+				cursor--;
+			}
+			source[cursor]=buf;
+        	}
+
+        	for(; i < length; i++) {
+			cursor = i;
                 	buf = source[cursor];
-                	val = *(reinterpret_cast<INT*>(source+(cursor=i)));
-                	while(cursor > 0 &&
+                	val = *(reinterpret_cast<INT*>(source + (cursor)));
+                	while(
                       	val < *(reinterpret_cast<INT*>(source + (cursor-1)))
                      	) {
                         	source[cursor]=source[cursor-1];
@@ -272,10 +287,10 @@ std::cout <<
 "Processing ladle for byte " << +currentByte
 << std::endl;
 #endif
-		for(int i = 0; i < PREFETCH_LOOKAHEAD; i++) __builtin_prefetch((const void*)(destinationBuckets[i]),0,0);
 		for(unsigned i = 0; i < 256; i++) {
-			if(i < 256-PREFETCH_LOOKAHEAD) __builtin_prefetch((const void*)(destinationBuckets[i+PREFETCH_LOOKAHEAD]),0,0);
+			__builtin_prefetch((const void*)(destinationBuckets[i]),0,1);
 			ELEM *start = ladleBuffer+i*LADLE_SIZE;
+			__builtin_prefetch((const void*)(start),0,0);
 			ELEM *end = ladleBuckets[i];
 			unsigned len = end-start;
 			if(len > 0) {
@@ -447,13 +462,18 @@ std::cout << std::endl;
                         auto startOverflowBucket = thisBuffer;
                         ELEM* endOverflowBucket;
 
-                        	for(unsigned i = 0; i < 256; i++) {
-                                        passOverInputDealWithOverflow(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, targetBuckets);
-                                        passOverInputDealWithOverflow(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, targetBuckets);
-
-                                        startSourceBucket=sourceBuckets[(i<<1)+1];
-                                        startOverflowBucket = endOverflowBucket;
-                        	}
+                        for(unsigned i = 0; i < 256; i++) {
+                                endSourceBucket = sourceBuckets[i<<1];
+                                endOverflowBucket= overflowBuckets[i];
+                                if(endSourceBucket-startSourceBucket) {
+					passOverInputDealWithOverflow(startSourceBucket, endSourceBucket, currentByte, targetBuckets);
+                                }
+                                if(endOverflowBucket-startOverflowBucket) {
+                                        passOverInputDealWithOverflow(startOverflowBucket, endOverflowBucket, currentByte, targetBuckets);
+				}
+				startSourceBucket=sourceBuckets[(i<<1)+1];
+				startOverflowBucket = endOverflowBucket;
+                        }
 
         };
 
