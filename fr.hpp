@@ -40,7 +40,7 @@ const int DIVERSION_THRESHOLD = 12;
 #ifdef TEST_STDSORT_THRESHOLD
 const int STDSORT_DIVERSION_THRESHOLD=TEST_STD_SORTTHRESHOLD;
 #else
-const int STDSORT_DIVERSION_THRESHOLD = 100;
+const int STDSORT_DIVERSION_THRESHOLD = 250;
 #endif
 
 const int DISTRIBUTION_SENSITIVE_THRESHOLD = 4096; 	/* 	If a length of data to be processed is smaller than this and
@@ -307,8 +307,6 @@ std::cout << std::endl;
 #ifdef DEBUG_LADLE
 std::cout << "The data chunk of " << len << " elements fits in it's regular bucket located at " << +(*currentDestination)-destination << std::endl;
 #endif
-
-					//std::memcpy(destination, source, length*sizeof(ELEM));
 					std::memcpy(*currentDestination, start, len*sizeof(ELEM));
 					*currentDestination += len;
 #ifdef DEBUG_LADLE
@@ -990,10 +988,11 @@ start = std::chrono::high_resolution_clock::now();
 		ELEM* endSmallRuns;
 		ELEM* startDefiniteLongRun;
 		ELEM* endDefiniteLongRun;
-
+		const unsigned step = (DIVERSION_THRESHOLD>>1);
 		startSmallRuns = source;
-
-		for(ELEM* element = source+(DIVERSION_THRESHOLD>>1); element < (source+length-(DIVERSION_THRESHOLD>>1)); element += (DIVERSION_THRESHOLD>>1)) {
+		ELEM* element = source+(DIVERSION_THRESHOLD>>1)-1;
+		INT newBits;
+		for(unsigned i = step-1; i < length-step; i += step, element += step) {
 			const INT newBits = getHighBits(*element);
 			if(currentBits ^ newBits) { //Things changed
 				if(definiteLongRun) { // A long run has ended
@@ -1019,7 +1018,6 @@ start = std::chrono::high_resolution_clock::now();
 						if(bottomBytesSize%2) {
 							std::memcpy(destination, source, length*sizeof(ELEM));
 						}
-
 
 						source = oldSource;
 						destination = oldDestination;
