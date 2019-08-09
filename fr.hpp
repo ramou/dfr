@@ -66,11 +66,11 @@ void dfr(ELEM *source, auto length) {
 		1) Diverting on small lengths
 	*/
 
-	auto insertionSort = [](ELEM *source, const auto &length) {	
-        	ELEM buf;
-        	INT val;
-        	unsigned i = 1;
-        	unsigned cursor;
+	auto insertionSort = [](register ELEM *source, const register auto &length) {	
+        	register ELEM buf;
+        	register INT val;
+        	register unsigned i = 1;
+        	register unsigned cursor;
         	for(; i < ((length <= DIVERSION_THRESHOLD)?length:DIVERSION_THRESHOLD); i++) {
         		cursor=i;
 			buf = source[cursor];
@@ -266,18 +266,6 @@ void dfr(ELEM *source, auto length) {
 		std::swap(sourceBuckets, destinationBuckets);
 	};
 
-	const auto passOverInput = [](ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &deal, const auto &gatherStats) {
-		if(start == end) return;
-		const ELEM* element = start;
-		const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte; 
-		const unsigned len = (end-start);
-
-		for(unsigned i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
-			deal(*target, *element);
-			gatherStats(*target, *element);
-		}
-	};
-
 	const auto processLadle = 
 		[&ladleBuffer, &ladleBuckets, &destinationBuckets, &overflow, &overflowBuffer, &overflowMaxSize, &source, &destination, &overflowCounts, &length]
 		(const auto &currentByte) {
@@ -372,14 +360,15 @@ std::cout << std::endl;
 
         const auto passOverInputDealWithOverflowAndGatherLiveBits = 
 		[&source, &overflow, &overflowCounts, &overflowBuffer, &overflowMaxSize, &livebits, &bitmask]
-		(ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &targetBuckets) {
+		(ELEM* start, ELEM *end, const register uint8_t &currentByte, const register auto &targetBuckets) {
                 if(start == end) return;
-                const ELEM* element = start;
-                const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
-                const unsigned len = (end-start);
+                const register ELEM* element = start;
+                const register uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
+                const register unsigned len = (end-start);
+		register ELEM **currentDestination;
 
-                for(unsigned i = 0; i < len; ++i, livebits |= bitmask ^ reinterpret_cast<INT>(*(element++)), target+=sizeof(ELEM)) {
-			ELEM **currentDestination = targetBuckets + ((*target) << 1);
+                for(register unsigned i = 0; i < len; ++i, livebits |= bitmask ^ reinterpret_cast<INT>(*(element++)), target+=sizeof(ELEM)) {
+			currentDestination = targetBuckets + ((*target) << 1);
 			if(*currentDestination < *(currentDestination+1)) {
 				*((*currentDestination)++) = *element;
  			} else {
@@ -395,14 +384,15 @@ std::cout << std::endl;
 
         const auto passOverInputDealWithOverflowAndGatherLiveBitsLadle =
                 [&source, &overflow, &overflowCounts, &overflowBuffer, &overflowMaxSize, &livebits, &bitmask, &processLadle, &ladleBuckets, &length, &ladleBuffer]
-                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &targetBuckets) {
+                (ELEM* start, ELEM *end, const register uint8_t &currentByte, const register auto &targetBuckets) {
                 if(start == end) return;
-                const ELEM* element = start;
-                const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
-                const unsigned len = (end-start);
+                const register ELEM* element = start;
+                const register uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
+                const register unsigned len = (end-start);
+		register ELEM **currentDestination;
 
 		if(length > LADLE_THRESHOLD) {
-			for(unsigned i = 0; i < len; ++i, livebits |= bitmask ^ reinterpret_cast<INT>(*(element++)), target+=sizeof(ELEM)) {
+			for(register auto i = 0; i < len; ++i, livebits |= bitmask ^ reinterpret_cast<INT>(*(element++)), target+=sizeof(ELEM)) {
 				if(*(ladleBuckets + (*target)) == (ladleBuffer + (*target + 1)*LADLE_SIZE )) {
 					processLadle(currentByte);
 					*((*(ladleBuckets + (*target)))++) = *element;
@@ -412,8 +402,8 @@ std::cout << std::endl;
 			}
 			processLadle(currentByte);
 		} else {
-                	for(unsigned i = 0; i < len; ++i, livebits |= bitmask ^ reinterpret_cast<INT>(*(element++)), target+=sizeof(ELEM)) {
-                        	ELEM **currentDestination = targetBuckets + ((*target) << 1);
+                	for(register auto i = 0; i < len; ++i, livebits |= bitmask ^ reinterpret_cast<INT>(*(element++)), target+=sizeof(ELEM)) {
+                        	currentDestination = targetBuckets + ((*target) << 1);
                         	if(*currentDestination < *(currentDestination+1)) {
                                 	*((*currentDestination)++) = *element;
                         	} else {
@@ -431,14 +421,15 @@ std::cout << std::endl;
 
         const auto passOverInputDealWithOverflow =
                 [&source, &overflow, &overflowCounts, &overflowBuffer, &overflowMaxSize]
-                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &targetBuckets) {
+                (ELEM* start, ELEM *end, const register uint8_t &currentByte, const register auto &targetBuckets) {
                 if(start == end) return;
-                const ELEM* element = start;
-                const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
-                const unsigned len = (end-start);
+                const register ELEM* element = start;
+                const register uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
+                const register unsigned len = (end-start);
+		register ELEM **currentDestination;
 
-                for(unsigned i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
-                        ELEM **currentDestination = targetBuckets + ((*target) << 1);
+                for(register unsigned i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
+                        currentDestination = targetBuckets + ((*target) << 1);
                         if(*currentDestination < *(currentDestination+1)) {
                                 *((*currentDestination)++) = *element;
                         } else {
@@ -454,7 +445,7 @@ std::cout << std::endl;
 
         const auto passOverInputsDealWithOverflow = 
 		[&sourceBuckets, &overflowBuckets, &passOverInputDealWithOverflow]
-		(ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &targetBuckets) {
+		(ELEM *thisSource, ELEM *thisBuffer, const register auto &currentByte, const register auto &targetBuckets) {
                         auto startSourceBucket = thisSource;
                         ELEM* endSourceBucket;
                         auto startOverflowBucket = thisBuffer;
@@ -477,18 +468,16 @@ std::cout << std::endl;
 
         const auto passOverInputDealWithOverflowAndCounting =
                 [&source, &overflow, &overflowCounts, &overflowBuffer, &overflowMaxSize, &bucketCounts, &destination]
-                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &targetBuckets, const uint8_t &countByte) {
+                (ELEM* start, ELEM *end, const register uint8_t &currentByte, const register auto &targetBuckets, const uint8_t &countByte) {
                 if(start == end) return;
-                const ELEM* element = start;
-                const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
-		const uint8_t *countTarget = reinterpret_cast<const uint8_t*>(element) + countByte;
+                const register ELEM* element = start;
+                const register uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
+		const register uint8_t *countTarget = reinterpret_cast<const uint8_t*>(element) + countByte;
+                const register unsigned len = (end-start);
+		register ELEM **currentDestination;
 
-                const unsigned len = (end-start);
-
-                for(unsigned i = 0; i < len; ++i, element++, target+=sizeof(ELEM), bucketCounts[*countTarget]++, countTarget+=sizeof(ELEM)) {
-
-
-          ELEM **currentDestination = targetBuckets + ((*target) << 1);
+                for(register unsigned i = 0; i < len; ++i, element++, target+=sizeof(ELEM), bucketCounts[*countTarget]++, countTarget+=sizeof(ELEM)) {
+         		currentDestination = targetBuckets + ((*target) << 1);
                         if(*currentDestination < *(currentDestination+1)) {
                                 *((*currentDestination)++) = *element;
                         } else {
@@ -504,7 +493,7 @@ std::cout << std::endl;
 
         const auto passOverInputsDealWithOverflowAndCounting =
                 [&sourceBuckets, &overflowBuckets, &passOverInputDealWithOverflowAndCounting]
-                (ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &targetBuckets, const uint8_t &countByte) {
+                (ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const register auto &targetBuckets, const register uint8_t &countByte) {
                         auto startSourceBucket = thisSource;
                         ELEM* endSourceBucket;
                         auto startOverflowBucket = thisBuffer;
@@ -527,20 +516,22 @@ std::cout << std::endl;
 
         const auto passOverInputDealExact =
                 []
-                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &targetBuckets) {
+                (ELEM* start, ELEM *end, const register uint8_t &currentByte, const register auto &targetBuckets) {
                 if(start == end) return;
-                const ELEM* element = start;
-                const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
-                const unsigned len = (end-start);
+                const register ELEM* element = start;
+                const register uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
+                const register unsigned len = (end-start);
+		register ELEM **currentDestination;
 
-                for(unsigned i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
-			*((*(targetBuckets + (*target)))++) = *element;
+                for(register unsigned i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
+			currentDestination = targetBuckets + (*target);
+			*((*currentDestination)++) = *element;
                 }
         };
 
         const auto passOverInputsDealExact =
                 [&sourceBuckets, &overflowBuckets, &passOverInputDealExact]
-                (ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &targetBuckets) {
+                (ELEM *thisSource, ELEM *thisBuffer, const register auto &currentByte, const register auto &targetBuckets) {
                         auto startSourceBucket = thisSource;
                         ELEM* endSourceBucket;
                         auto startOverflowBucket = thisBuffer;
@@ -557,14 +548,14 @@ std::cout << std::endl;
 
         const auto passOverInputCounting =
                 [&bucketCounts]
-                (ELEM* start, ELEM *end, const uint8_t &countByte) {
+                (ELEM* start, ELEM *end, const register uint8_t &countByte) {
                 if(start == end) return;
-                const ELEM* element = start;
-                const uint8_t *countTarget = reinterpret_cast<const uint8_t*>(element) + countByte;
+                const register ELEM* element = start;
+                const register uint8_t *countTarget = reinterpret_cast<const uint8_t*>(element) + countByte;
 
-                const unsigned len = (end-start);
+                const register unsigned len = (end-start);
 
-                for(unsigned i = 0; i < len; ++i, element++, bucketCounts[*countTarget]++, countTarget+=sizeof(ELEM));
+                for(register unsigned i = 0; i < len; ++i, element++, bucketCounts[*countTarget]++, countTarget+=sizeof(ELEM));
         };
 
         const auto passOverInputsCounting =
@@ -587,14 +578,16 @@ std::cout << std::endl;
 
         const auto passOverInputDealExactAndGatherLiveBits =
                 [&livebits, &bitmask]
-                (ELEM* start, ELEM *end, const uint8_t &currentByte, const auto &targetBuckets) {
+                (ELEM* start, ELEM *end, const register uint8_t &currentByte, const register auto &targetBuckets) {
                 if(start == end) return;
-                const ELEM* element = start;
-                const uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
-                const unsigned len = (end-start);
+                const register ELEM* element = start;
+                const register uint8_t *target = reinterpret_cast<const uint8_t*>(element) + currentByte;
+                const register unsigned len = (end-start);
+		register ELEM **currentDestination;
 
-                for(unsigned i = 0; i < len; ++i, livebits |= bitmask ^ reinterpret_cast<INT>(*(element++)), target+=sizeof(ELEM)) {
-			*((*(targetBuckets + (*target)))++) = *element;
+                for(register unsigned i = 0; i < len; ++i, livebits |= bitmask ^ reinterpret_cast<INT>(*(element++)), target+=sizeof(ELEM)) {
+			currentDestination = targetBuckets + (*target);
+			*((*currentDestination)++) = *element;
                 }
         };
 
@@ -615,14 +608,15 @@ std::cout << std::endl;
                         }
         };
 
+	//STUART:: I noted that extracting the darget buckets pointer to a register yielded advantage elsewhere... is this true here too??
         const auto passOverInputDealSimple =
                 []
-                (ELEM* start, ELEM *end, const auto &targetBuckets) {
+                (ELEM* start, ELEM *end, const register auto &targetBuckets) {
                 if(start == end) return;
-                const ELEM* element = start;
-                const unsigned len = (end-start);
+                const register ELEM* element = start;
+                const register unsigned len = (end-start);
 
-                for(unsigned i = 0; i < len; ++i, *((*targetBuckets)++)=*(element++));
+                for(register unsigned i = 0; i < len; ++i, *((*targetBuckets)++)=*(element++));
         };
 
         const auto passOverInputsDealSimple =
@@ -642,73 +636,12 @@ std::cout << std::endl;
                         }
         };
 
-
-	const auto passOverInputs = [&](ELEM *thisSource, ELEM *thisBuffer, const auto &currentByte, const auto &deal, const auto &gatherStats) {
-			auto startSourceBucket = thisSource;
-			ELEM* endSourceBucket;
-			auto startOverflowBucket = thisBuffer;
-			ELEM* endOverflowBucket;
-
-			for(unsigned i = 0; i < 256; i++) {
-					passOverInput(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, deal, gatherStats);
-					passOverInput(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, deal, gatherStats);
-
-					startSourceBucket=sourceBuckets[(i<<1)+1];
-					startOverflowBucket = endOverflowBucket;
-			}
-	};
-
-	const auto dealWithOverflow = [&](const auto &targetBucketIndex, const auto &element) {
-		auto currentDestination = destinationBuckets[targetBucketIndex << 1];
-		if(currentDestination < destinationBuckets[(targetBucketIndex << 1) + 1]) {
-			*currentDestination = element;
-			destinationBuckets[targetBucketIndex << 1]++;
-		} else {
-			overflowCounts[targetBucketIndex]++;
-			*overflow = element;
-			overflow++;
-			if(overflow == overflowBuffer+(2 * overflowMaxSize)) {
-				overflow = source;
-			}
-		}
-	};
-
-	const auto simpleDeal = [&destinationBuckets](const auto &targetBucketIndex, const auto &element) {
-		auto currentDestination = destinationBuckets[0];
-                *currentDestination=element;
-                destinationBuckets[0]++;
-	};
-
-	const auto dealExact = [&destinationBuckets, &destination](const auto &targetBucketIndex, const auto &element) {
-		auto currentDestination = destinationBuckets[targetBucketIndex];
-		*currentDestination=element;
-		destinationBuckets[targetBucketIndex]++;
-	};
-
-	const auto dealToOverflow = [&overflowBuckets](auto &targetBucketIndex, const auto &element) {
-		auto currentDestination = overflowBuckets[targetBucketIndex];
-		*currentDestination=element;
-		overflowBuckets[targetBucketIndex]++;
-	};
-
-	const auto noDeal = [](const auto &targetBucketIndex, const auto &element){};
-	const auto noStats = [](const auto &targetBucketIndex, const auto &element){};
-
-	const auto gatherLiveBits = [&livebits, &bitmask](const auto &targetBucketIndex, const auto &element){
-		livebits |= bitmask ^ reinterpret_cast<INT>(element);
-	};
-
-	const auto countForByte = [&] (const auto &targetBucketIndex, const auto &element) {
-		auto countedBucketIndex = ((reinterpret_cast<INT>(element))>>(countedByte*8)) & 255;
-		bucketCounts[countedBucketIndex]++;
-	};
-
 	const auto convertCountsToContiguousBuckets = [&destination](const auto &counts, const auto &buckets, const auto &buffer) {
 		*buckets=buffer;
-		auto currentBucket = buckets+1;
-		auto previousBucket = buckets+0;
+		register auto currentBucket = buckets+1;
+		register auto previousBucket = buckets+0;
 
-		std::for_each(counts, counts+255, [&currentBucket, &previousBucket](auto &count) {
+		std::for_each(counts, counts+255, [&currentBucket, &previousBucket](register auto &count) {
 			*currentBucket = *previousBucket + count;
 			currentBucket++;
 			previousBucket++;
@@ -731,8 +664,8 @@ std::cout << std::endl;
 			convertCountsToContiguousBuckets(overflowCounts, overflowBuckets, overflowBuffer);
 
 			//pass left-to right from the overflow buffer, then from the front of the source also used as overflow buffer.
-			passOverInput(oldOverflowBuffer+overflowMaxSize, oldOverflowBuffer+(2*overflowMaxSize), currentByte, dealToOverflow, noStats);
-			if(overflow-source)passOverInput(source, overflow, currentByte, dealToOverflow, noStats);
+			passOverInputDealExact(oldOverflowBuffer+overflowMaxSize, oldOverflowBuffer+(2*overflowMaxSize), currentByte, overflowBuckets);
+			if(overflow-source)passOverInputDealExact(source, overflow, currentByte, overflowBuckets);
 
 			//Assign the new buffer size.
 			overflowMaxSize = newsize;
@@ -746,7 +679,7 @@ std::cout << std::endl;
 		} else {
 			if(overflowMaxSize != 0){ //If we processed overflow without ever using overflow we skip this stuff
 				convertCountsToContiguousBuckets(overflowCounts, overflowBuckets, overflowBuffer);
-				passOverInput(overflowBuffer+overflowMaxSize,(source==overflow)?(overflowBuffer+(2*overflowMaxSize)):overflow, currentByte, dealToOverflow, noStats);
+				passOverInputDealExact(overflowBuffer+overflowMaxSize,(source==overflow)?(overflowBuffer+(2*overflowMaxSize)):overflow, currentByte, overflowBuckets);
 				overflow = overflowBuffer+overflowMaxSize;
 			}
 		}
@@ -782,7 +715,7 @@ std::cout << std::endl;
 
 	        if(neededBytes == 1) { // Just do a single count pass first and in a very un-fast-radix-way deal exactly into destination
 			countedByte=currentByte;
-			passOverInput(source, source+length, currentByte, noDeal, countForByte);
+			passOverInputCounting(source, source+length, currentByte);
 			convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
 
 			if(hasByteLists) {
@@ -823,7 +756,6 @@ std::cout << "After 2 passes Top Bytes: " << topBytesSize << " Bottom Bytes: " <
         std::chrono::high_resolution_clock::time_point end;
         std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
 #endif
-
 			doEstimates();
 			if(hasByteLists) {
 					passOverInputDealWithOverflow(source, source+length, currentByte, destinationBuckets);
@@ -976,24 +908,26 @@ start = std::chrono::high_resolution_clock::now();
 
 		// ((reinterpret_cast<INT>(element))>
 
-		const auto getHighBits = [&highBitMask](const ELEM &element) {
-			return (reinterpret_cast<INT>(element)) & highBitMask;
+		
+		const register INT r_highBitMask = highBitMask;
+		const auto getHighBits = [&r_highBitMask](const register ELEM &element) {
+			return (reinterpret_cast<INT>(element)) & r_highBitMask;
 		};
 
-		INT currentBits = getHighBits(*source);
+		register INT currentBits = getHighBits(*source);
 
-		bool potentialLongRun = false;
-		bool definiteLongRun = false;
+		register bool potentialLongRun = false;
+		register bool definiteLongRun = false;
 		ELEM* startSmallRuns;
 		ELEM* endSmallRuns;
 		ELEM* startDefiniteLongRun;
 		ELEM* endDefiniteLongRun;
-		const unsigned step = (DIVERSION_THRESHOLD>>1);
+		const register unsigned step = (DIVERSION_THRESHOLD>>1);
 		startSmallRuns = source;
-		ELEM* element = source+(DIVERSION_THRESHOLD>>1)-1;
-		INT newBits;
-		for(unsigned i = step-1; i < length-step; i += step, element += step) {
-			const INT newBits = getHighBits(*element);
+		register ELEM* element = source+(DIVERSION_THRESHOLD>>1)-1;
+		register INT newBits;
+		for(register unsigned i = step-1; i < length-step; i += step, element += step) {
+			newBits = getHighBits(*element);
 			if(currentBits ^ newBits) { //Things changed
 				if(definiteLongRun) { // A long run has ended
 					//walk back by one to find the exact end of the long run
