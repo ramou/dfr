@@ -199,6 +199,8 @@ void dfr(ELEM *source, auto length) {
 	auto foundLiveBits = 0;
 	auto neededBytes = sizeof(INT);
 	const auto allBits = 8*sizeof(INT);
+
+	//STUART:: look into __builtin_popcount or __builtin_popcountll 
 	for(auto i = 1; i < allBits; i++) {
 		auto val = ((livebits >> (int)(allBits - i)) & 1);
 		foundLiveBits += val;
@@ -275,7 +277,7 @@ std::cout <<
 "Processing ladle for byte " << +currentByte
 << std::endl;
 #endif
-		for(unsigned i = 0; i < 256; i++) {
+		for(auto i = 0; i < 256; i++) {
 			__builtin_prefetch((const void*)(destinationBuckets[i]),0,1);
 			ELEM *start = ladleBuffer+i*LADLE_SIZE;
 			__builtin_prefetch((const void*)(start),0,0);
@@ -428,7 +430,7 @@ std::cout << std::endl;
                 const register unsigned len = (end-start);
 		register ELEM **currentDestination;
 
-                for(register unsigned i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
+                for(register auto i = 0; i < len; ++i, element++, target+=sizeof(ELEM)) {
                         currentDestination = targetBuckets + ((*target) << 1);
                         if(*currentDestination < *(currentDestination+1)) {
                                 *((*currentDestination)++) = *element;
@@ -451,15 +453,18 @@ std::cout << std::endl;
                         auto startOverflowBucket = thisBuffer;
                         ELEM* endOverflowBucket;
 
-                        for(unsigned i = 0; i < 256; i++) {
+                        for(auto i = 0; i < 256; i++) {
                                 endSourceBucket = sourceBuckets[i<<1];
                                 endOverflowBucket= overflowBuckets[i];
+
                                 if(endSourceBucket-startSourceBucket) {
 					passOverInputDealWithOverflow(startSourceBucket, endSourceBucket, currentByte, targetBuckets);
                                 }
+
                                 if(endOverflowBucket-startOverflowBucket) {
                                         passOverInputDealWithOverflow(startOverflowBucket, endOverflowBucket, currentByte, targetBuckets);
 				}
+
 				startSourceBucket=sourceBuckets[(i<<1)+1];
 				startOverflowBucket = endOverflowBucket;
                         }
@@ -476,7 +481,7 @@ std::cout << std::endl;
                 const register unsigned len = (end-start);
 		register ELEM **currentDestination;
 
-                for(register unsigned i = 0; i < len; ++i, element++, target+=sizeof(ELEM), bucketCounts[*countTarget]++, countTarget+=sizeof(ELEM)) {
+                for(register auto i = 0; i < len; ++i, element++, target+=sizeof(ELEM), bucketCounts[*countTarget]++, countTarget+=sizeof(ELEM)) {
          		currentDestination = targetBuckets + ((*target) << 1);
                         if(*currentDestination < *(currentDestination+1)) {
                                 *((*currentDestination)++) = *element;
@@ -499,7 +504,7 @@ std::cout << std::endl;
                         auto startOverflowBucket = thisBuffer;
                         ELEM* endOverflowBucket;
 
-                        for(unsigned i = 0; i < 256; i++) {
+                        for(auto i = 0; i < 256; i++) {
 				endSourceBucket = sourceBuckets[i<<1];
 				endOverflowBucket= overflowBuckets[i];
 
@@ -523,7 +528,7 @@ std::cout << std::endl;
                 const register unsigned len = (end-start);
 		register ELEM **currentDestination;
 
-                for(register unsigned i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
+                for(register auto i = 0; i < len; ++i, ++element, target+=sizeof(ELEM)) {
 			currentDestination = targetBuckets + (*target);
 			*((*currentDestination)++) = *element;
                 }
@@ -537,7 +542,7 @@ std::cout << std::endl;
                         auto startOverflowBucket = thisBuffer;
                         ELEM* endOverflowBucket;
 
-                        for(unsigned i = 0; i < 256; i++) {
+                        for(auto i = 0; i < 256; i++) {
                                         passOverInputDealExact(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, targetBuckets);
                                         passOverInputDealExact(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, targetBuckets);
 
@@ -585,7 +590,7 @@ std::cout << std::endl;
                 const register unsigned len = (end-start);
 		register ELEM **currentDestination;
 
-                for(register unsigned i = 0; i < len; ++i, livebits |= bitmask ^ reinterpret_cast<INT>(*(element++)), target+=sizeof(ELEM)) {
+                for(register auto i = 0; i < len; ++i, livebits |= bitmask ^ reinterpret_cast<INT>(*(element++)), target+=sizeof(ELEM)) {
 			currentDestination = targetBuckets + (*target);
 			*((*currentDestination)++) = *element;
                 }
@@ -599,7 +604,7 @@ std::cout << std::endl;
                         auto startOverflowBucket = thisBuffer;
                         ELEM* endOverflowBucket;
 
-                        for(unsigned i = 0; i < 256; i++) {
+                        for(auto i = 0; i < 256; i++) {
                                         passOverInputDealExactAndGatherLiveBits(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], currentByte, targetBuckets);
                                         passOverInputDealExactAndGatherLiveBits(startOverflowBucket, endOverflowBucket= overflowBuckets[i], currentByte, targetBuckets);
 
@@ -616,7 +621,7 @@ std::cout << std::endl;
                 const register ELEM* element = start;
                 const register unsigned len = (end-start);
 
-                for(register unsigned i = 0; i < len; ++i, *((*targetBuckets)++)=*(element++));
+                for(register auto i = 0; i < len; ++i, *((*targetBuckets)++)=*(element++));
         };
 
         const auto passOverInputsDealSimple =
@@ -627,7 +632,7 @@ std::cout << std::endl;
                         auto startOverflowBucket = thisBuffer;
                         ELEM* endOverflowBucket;
 
-                        for(unsigned i = 0; i < 256; i++) {
+                        for(auto i = 0; i < 256; i++) {
                                         passOverInputDealSimple(startSourceBucket, endSourceBucket = sourceBuckets[i<<1], targetBuckets);
                                         passOverInputDealSimple(startOverflowBucket, endOverflowBucket= overflowBuckets[i], targetBuckets);
 
