@@ -71,6 +71,7 @@ void dfr(ELEM *source, auto length) {
         	register INT val;
         	register unsigned i = 1;
         	register unsigned cursor;
+
         	for(; i < ((length <= DIVERSION_THRESHOLD)?length:DIVERSION_THRESHOLD); i++) {
         		cursor=i;
 			buf = source[cursor];
@@ -195,6 +196,8 @@ void dfr(ELEM *source, auto length) {
 	#endif
 
 	auto neededBits = ceil(std::log2((float)(length)/(float)(DIVERSION_THRESHOLD))); //ceil(log(1792/14)/log(2)),
+	//auto neededBits = ceil(std::log2((float)(length)/(float)(STDSORT_DIVERSION_THRESHOLD-1)));
+	//The above causese a bug. I don't understand why...
 
 	auto foundLiveBits = 0;
 	auto neededBytes = sizeof(INT);
@@ -718,6 +721,12 @@ std::cout << std::endl;
 
 	//Should we assign overflow's starting position here? Is the shrinking of source the cause of this pain or is it always pointing to a suitable buffer?
 
+#ifdef TIMINGS
+        std::chrono::high_resolution_clock::time_point end;
+        std::chrono::high_resolution_clock::time_point start;
+#endif
+
+
 	        if(neededBytes == 1) { // Just do a single count pass first and in a very un-fast-radix-way deal exactly into destination
 			countedByte=currentByte;
 			passOverInputCounting(source, source+length, currentByte);
@@ -737,6 +746,13 @@ std::cout << "After 1 pass Top Bytes: " << topBytesSize << " Bottom Bytes: " << 
 			swap();
 	        } else if(neededBytes == 2) {   // We need a pass that does count capturing, then deals back in place.
 						// We ignore when highest byte is dead; too annoying to check for
+
+#ifdef DEBUG
+#ifdef TIMINGS
+start = std::chrono::high_resolution_clock::now();
+#endif
+#endif
+
 			countedByte = hasByteLists?bytes[1]:currentByte+1;
 			doEstimates();
 			passOverInputDealWithOverflowAndCounting(source, source+length, currentByte, destinationBuckets, countedByte);
@@ -744,22 +760,44 @@ std::cout << "After 1 pass Top Bytes: " << topBytesSize << " Bottom Bytes: " << 
 			swap();
 			convertCountsToContiguousBuckets(bucketCounts, destinationBuckets, destination);
 
+#ifdef DEBUG
+#ifdef TIMINGS
+end = std::chrono::high_resolution_clock::now();
+std::cout << "\tPass 1 of 2 Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+start = std::chrono::high_resolution_clock::now();
+#endif
+#endif
+
+
 			if(hasByteLists) {
 				passOverInputsDealExact(source, overflowBuffer, countedByte, destinationBuckets);
 			} else {
 				passOverInputsDealExactAndGatherLiveBits(source, overflowBuffer, countedByte, destinationBuckets);
 				buildByteLists(currentByte);
 				hasByteLists=true;
+			}
+			swap();
+
+
+
+
+#ifdef DEBUG
+#ifdef TIMINGS
+end = std::chrono::high_resolution_clock::now();
+std::cout << "\tPass 2 of 2 Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+#endif
+#endif
+
 #ifdef DEBUG
 std::cout << "After 2 passes Top Bytes: " << topBytesSize << " Bottom Bytes: " << bottomBytesSize << std::endl;
 #endif
-			}
-			swap();
+
+
+
 	        } else {
 			//Do a first pass
 #ifdef TIMINGS
-        std::chrono::high_resolution_clock::time_point end;
-        std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+        start = std::chrono::high_resolution_clock::now();
 #endif
 			doEstimates();
 			if(hasByteLists) {
