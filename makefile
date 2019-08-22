@@ -1,10 +1,10 @@
 MISSING_VALGRIND="No valgrind in $(PATH), consider doing apt-get install valgrind (or yum install valgrind)"
 
 default: ;
-	c++ -o3 -std=c++14 perform.cpp -o perform
+	c++ -O3 -std=c++14 perform.cpp -o perform
 
 timing: ;
-	c++ -o3 -DTIMINGS -std=c++14 perform.cpp -o perform
+	c++ -O3 -DTIMINGS -std=c++14 perform.cpp -o perform
 	./perform $(filter-out $@,$(MAKECMDGOALS))
 
 valgrind: ;
