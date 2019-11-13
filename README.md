@@ -48,3 +48,30 @@ https://github.com/refresh-bio/RADULS
 @skarupke has a really neat implementation of a MSD Radix Sort. I think more people should give it the time. My code is easier to use than that RADULS code, but effort has been made to make Ska Sort readily usable in a broad array of cases and I aspire to systematically add the same flexibility to the use of Diverting Fast Radix. A lot of thought has been put into details that I personally haven't cared about, but which I recognize to be really relevant... I hope also to unload much of this on a Master's student as well :D
 
 https://github.com/skarupke/ska_sort
+
+## If you use my code...
+Ok, you don't have to. I gotta set the license proper, but I'm pretty down with MIT free. However, if you're using it in a publication, you can reference what I did with a very old version that isn't even half as fast (literally isn't even half as fast):
+https://dl.acm.org/citation.cfm?id=2938554
+```bibtex
+@inproceedings{Thiel:2016:IGL:2938503.2938554,
+ author = {Thiel, Stuart and Butler, Greg and Thiel, Larry},
+ title = {Improving GraphChi for Large Graph Processing: Fast Radix Sort in Pre-Processing},
+ booktitle = {Proceedings of the 20th International Database Engineering \&\#38; Applications Symposium},
+ series = {IDEAS '16},
+ year = {2016},
+ isbn = {978-1-4503-4118-9},
+ location = {Montreal, QC, Canada},
+ pages = {135--141},
+ numpages = {7},
+ url = {http://doi.acm.org/10.1145/2938503.2938554},
+ doi = {10.1145/2938503.2938554},
+ acmid = {2938554},
+ publisher = {ACM},
+ address = {New York, NY, USA},
+ keywords = {algorithm, analytics, big data, graph processing, radix sort},
+} 
+```
+
+Yes, I'm working with my dad. Yes, it's super cool!
+
+
