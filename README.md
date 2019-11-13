@@ -13,6 +13,9 @@ make perform
 This'll give a ton of debug data about where diversion happened and what passes took how long, and how long it took for standard sort to do it. 
 If you're super nice, you'll run this on standalone machines for 10<sup>2</sup> till 10<sup>9</sup> and mail me the results, with maybe `/proc/cpuinfo` or something cool like that. What's neat is I've seen some crazy variation from architecture to architecure that opens the door to the makefile doing a `make install` that squeezes out some crazy extra speed (but only on special cases).
 
+## So, how fast is it?
+Check out the [times we've recorded](performance). It's a log scale, so there's a link to the raw data so you can see that.
+
 ## How to use it
 
 Until I do a proper `make install` ([#4](https://github.com/ramou/dfr/issues/4)), just make sure you include the [fr.hpp](fr.hpp) file, which contains all the real stuff. 
