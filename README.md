@@ -6,12 +6,13 @@ So, you want to sort things faster because you've realized that under the hood, 
 ## Seeing it run in a simple case
 ```
 git clone https://github.com/ramou/dfr.git
-make perform
+cd dfr
+make timing
 ./perform 1000000
 ```
 
 This'll give a ton of debug data about where diversion happened and what passes took how long, and how long it took for standard sort to do it. 
-If you're super nice, you'll run this on standalone machines for 10<sup>2</sup> till 10<sup>9</sup> and mail me the results, with maybe `/proc/cpuinfo` or something cool like that. What's neat is I've seen some crazy variation from architecture to architecure that opens the door to the makefile doing a `make install` that squeezes out some crazy extra speed (but only on special cases).
+If you're super nice, you'll run this on standalone machines for 10<sup>2</sup> till 10<sup>9</sup> and mail me the results, with maybe `/proc/cpuinfo`, `lscpu` or something cool like that. What's neat is I've seen some crazy variation from architecture to architecure that opens the door to the makefile doing a `make install` that squeezes out some crazy extra speed (but only on special cases).
 
 ## So, how fast is it?
 Check out the [times we've recorded](performance). It's a log scale, so there's a link to the raw data so you can see that.
