@@ -128,7 +128,7 @@ private:
   // sentinel after its end.
   OneSimdIntT StripeSums{1};  // Set sentinel in ~[1]. ~[0] doesn't care.
 
-#include "OFBktMgr.c"
+#include "OFBktMgr.C"
 } __attribute__ ((aligned (CACHE_LINE_LEN)));  // OFBktMgr
 
 #endif
