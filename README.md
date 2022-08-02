@@ -1,3 +1,17 @@
+# ThielSort
+A competitive implementation of the dfr, written by Larry Thiel. To run, clone this repo:
+```
+cd ThielSort\dfr
+make CannedExtras=July18SimdExtras timing
+```
+Then run it with 
+```
+./dfrOpt -n 1000000000 -s -r Uniform
+./dfrOpt -n 1000000000 -s -r Normal 1 9223370000000000000 2305840000000000000
+./dfrOpt -n 1000000000 -s -r Normal 1 4294970000 1073740000
+```
+Which runs it for 1 bil vals for Uniform data, a wide normal distribution and a narrow distribution respectively.
+
 # dfr
 Diverting Fast Radix, an incredibly fast algorithm for sorting fixed-digit data.
 
